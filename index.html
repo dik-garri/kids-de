@@ -101,6 +101,18 @@
     transition: transform .12s;
   }
   .bigBtn:active { transform: scale(.94); }
+  .bigBtn.attention { animation: wiggle 1.6s ease-in-out infinite; }
+  @keyframes wiggle {
+    0%, 100% { transform: scale(1) rotate(0); }
+    5% { transform: scale(1.06) rotate(-2deg); }
+    10% { transform: scale(1.06) rotate(2deg); }
+    15% { transform: scale(1) rotate(0); }
+  }
+  .bounce { animation: bounce 1.2s ease-in-out infinite; }
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(10px); }
+  }
   .roundBtn {
     border: none; border-radius: 50%;
     width: 68px; height: 68px; font-size: 32px;
@@ -196,7 +208,8 @@
   <div class="screen" id="scrUnknown">
     <div id="unkEmoji" style="font-size:100px">🤷</div>
     <div class="hint" id="unkText">Ой, я не расслышал. Попробуй ещё раз!</div>
-    <button class="bigBtn" id="retryBtn">Ещё раз 🎤</button>
+    <div style="font-size:44px" class="bounce">👇</div>
+    <button class="bigBtn attention" id="retryBtn">Скажи ещё раз 🎤</button>
   </div>
 
   <!-- NOT SUPPORTED -->
@@ -505,28 +518,34 @@ async function geminiLookup(query) {
 }
 
 /* ===================== ОЗВУЧКА (немецкий голос) ===================== */
-let deVoice = null;
+let deVoice = null, ruVoice = null;
 function pickVoice() {
   const voices = speechSynthesis.getVoices();
   deVoice = voices.find(v => v.lang === "de-DE" && /google|anna|petra|helena/i.test(v.name))
          || voices.find(v => v.lang === "de-DE")
          || voices.find(v => v.lang && v.lang.startsWith("de"))
          || null;
+  ruVoice = voices.find(v => v.lang === "ru-RU" && /google|milena|katya/i.test(v.name))
+         || voices.find(v => v.lang === "ru-RU")
+         || voices.find(v => v.lang && v.lang.startsWith("ru"))
+         || null;
 }
 if ("speechSynthesis" in window) {
   pickVoice();
   speechSynthesis.onvoiceschanged = pickVoice;
 }
-function speakGerman(text) {
+function speak(text, lang, voice, rate) {
   if (!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = "de-DE";
-  if (deVoice) u.voice = deVoice;
-  u.rate = 0.85;
+  u.lang = lang;
+  if (voice) u.voice = voice;
+  u.rate = rate;
   u.pitch = 1.05;
   speechSynthesis.speak(u);
 }
+function speakGerman(text) { speak(text, "de-DE", deVoice, 0.85); }
+function speakRussian(text) { speak(text, "ru-RU", ruVoice, 0.95); }
 
 /* ===================== ЗВУКОВОЙ СИГНАЛ ===================== */
 let audioCtx = null;
@@ -550,6 +569,8 @@ let recActive = false;
 function startListening() {
   if (!SR) { show("scrNoMic"); return; }
   if (recActive) return;
+  // замолкаем, чтобы микрофон не услышал голос самого приложения
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
   recognition = new SR();
   recognition.lang = "ru-RU";
   recognition.interimResults = false;
@@ -576,17 +597,23 @@ function startListening() {
     if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
       show("scrNoMic");
     } else {
-      showUnknown("Я ничего не услышал 🙉 Попробуй ещё раз!");
+      showUnknown("Я ничего не услышал",
+        "Я ничего не услышал. Нажми на жёлтую кнопку, подожди сигнал и говори громко!", "🙉");
     }
   };
   recognition.onend = () => {
     recActive = false;
     if (!gotResult && $("scrListen").classList.contains("active")) {
-      showUnknown("Я ничего не услышал 🙉 Попробуй ещё раз!");
+      showUnknown("Я ничего не услышал",
+        "Я ничего не услышал. Нажми на жёлтую кнопку, подожди сигнал и говори громко!", "🙉");
     }
   };
   try { recognition.start(); }
-  catch (e) { recActive = false; showUnknown("Ой, что-то сломалось. Ещё разок!"); }
+  catch (e) {
+    recActive = false;
+    showUnknown("Ой, что-то сломалось",
+      "Ой, что-то сломалось. Нажми на жёлтую кнопку ещё разок!", "🙈");
+  }
 }
 
 function stopListening() {
@@ -599,7 +626,8 @@ async function handlePhrase(alternatives) {
 
   const queries = alternatives.map(extractQuery).filter(Boolean);
   if (!queries.length) {
-    showUnknown("Я не расслышал 🙉 Скажи ещё раз!");
+    showUnknown("Я тебя не расслышал",
+      "Я тебя не расслышал. Нажми на жёлтую кнопку и скажи ещё раз!", "🙉");
     return;
   }
   const main = queries[0];
@@ -638,7 +666,9 @@ async function handlePhrase(alternatives) {
   }
 
   showUnknown("«" + main + "» — я пока не знаю " +
-              (isPhrase ? "эту фразу" : "это слово") + " 🤔");
+              (isPhrase ? "эту фразу" : "это слово"),
+    "Ой! Я пока не знаю " + (isPhrase ? "эту фразу" : "это слово") +
+    ". Нажми на жёлтую кнопку и попробуй другое слово!", "🤔");
 }
 
 let lastSpeech = "";
@@ -664,13 +694,18 @@ function showResult(hit) {
   lastSpeech = (art ? art + " " : "") + de;
   show("scrResult");
   beep(1320, 0.12);
+  try { navigator.vibrate && navigator.vibrate([40, 60, 40]); } catch (e) {}
   setTimeout(() => speakGerman(lastSpeech), 250);
 }
 
-function showUnknown(text) {
+function showUnknown(text, spoken, emoji) {
   $("unkText").textContent = text;
+  $("unkEmoji").textContent = emoji || "🤷";
   show("scrUnknown");
   beep(300, 0.2);
+  try { navigator.vibrate && navigator.vibrate(100); } catch (e) {}
+  // голосовая инструкция для ребёнка — что именно делать дальше
+  setTimeout(() => speakRussian(spoken || text), 350);
 }
 
 /* ===================== КНОПКИ ===================== */

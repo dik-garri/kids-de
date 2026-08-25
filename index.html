@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#7c5cff">
+<title>Wie heißt das? 🇩🇪</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Rounded", "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #a18fff 0%, #7c5cff 45%, #5a3fd6 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px;
+  }
+  header h1 { font-size: 20px; font-weight: 800; letter-spacing: .3px; opacity: .95; }
+  #gearBtn {
+    background: rgba(255,255,255,.15); border: none; color: #fff;
+    width: 40px; height: 40px; border-radius: 12px; font-size: 20px; cursor: pointer;
+  }
+  main {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 16px; text-align: center; gap: 18px;
+  }
+  .screen { display: none; flex-direction: column; align-items: center; gap: 18px; width: 100%; }
+  .screen.active { display: flex; }
+
+  .hint { font-size: 22px; font-weight: 700; opacity: .95; max-width: 320px; line-height: 1.35; }
+  .subhint { font-size: 15px; opacity: .7; max-width: 300px; line-height: 1.4; }
+
+  #micBtn {
+    width: min(58vw, 240px); height: min(58vw, 240px);
+    border-radius: 50%;
+    border: none;
+    background: radial-gradient(circle at 35% 30%, #ffd76a, #ff9f43 70%);
+    box-shadow: 0 12px 40px rgba(0,0,0,.28), inset 0 -8px 20px rgba(0,0,0,.12);
+    font-size: min(24vw, 100px);
+    cursor: pointer;
+    transition: transform .12s;
+  }
+  #micBtn:active { transform: scale(.93); }
+
+  .pulse {
+    width: min(58vw, 240px); height: min(58vw, 240px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #7bf2b2, #2ecc71 70%);
+    box-shadow: 0 12px 40px rgba(0,0,0,.28);
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(24vw, 100px);
+    animation: pulse 1.1s ease-in-out infinite;
+    border: none; cursor: pointer; color: #fff;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 12px 40px rgba(0,0,0,.28), 0 0 0 0 rgba(255,255,255,.45); }
+    50% { transform: scale(1.06); box-shadow: 0 12px 40px rgba(0,0,0,.28), 0 0 0 26px rgba(255,255,255,0); }
+  }
+
+  .spinner {
+    width: 70px; height: 70px; border-radius: 50%;
+    border: 8px solid rgba(255,255,255,.25);
+    border-top-color: #fff;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #resEmoji { font-size: min(34vw, 130px); line-height: 1.1; }
+  #resRu { font-size: 20px; opacity: .75; font-weight: 600; }
+  #resDe {
+    font-size: min(11vw, 52px); font-weight: 900;
+    background: rgba(255,255,255,.95);
+    padding: 14px 30px; border-radius: 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+    cursor: pointer; line-height: 1.2;
+    max-width: 92vw; word-wrap: break-word;
+  }
+  #resDe .art-der { color: #2f7fd6; }
+  #resDe .art-die { color: #e0507a; }
+  #resDe .art-das { color: #2fae6e; }
+  #resDe .word { color: #333; }
+
+  .bigBtn {
+    border: none; border-radius: 22px;
+    padding: 16px 34px;
+    font-size: 24px; font-weight: 800;
+    color: #5a3fd6; background: #ffd76a;
+    box-shadow: 0 8px 20px rgba(0,0,0,.22);
+    cursor: pointer;
+    transition: transform .12s;
+  }
+  .bigBtn:active { transform: scale(.94); }
+  .roundBtn {
+    border: none; border-radius: 50%;
+    width: 68px; height: 68px; font-size: 32px;
+    background: rgba(255,255,255,.2); color: #fff;
+    cursor: pointer;
+  }
+  .row { display: flex; gap: 16px; align-items: center; justify-content: center; }
+
+  #typeLink {
+    background: none; border: none; color: rgba(255,255,255,.65);
+    font-size: 14px; text-decoration: underline; cursor: pointer; padding: 8px;
+  }
+  #typeBox { display: none; gap: 10px; width: 100%; max-width: 340px; }
+  #typeBox.open { display: flex; }
+  #typeInput {
+    flex: 1; border: none; border-radius: 14px; padding: 12px 16px;
+    font-size: 18px; outline: none;
+  }
+  #typeGo {
+    border: none; border-radius: 14px; padding: 12px 18px;
+    font-size: 18px; font-weight: 700; background: #ffd76a; color: #5a3fd6; cursor: pointer;
+  }
+
+  dialog {
+    border: none; border-radius: 20px; padding: 24px;
+    max-width: 340px; width: 90vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    font-family: inherit;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  dialog h2 { font-size: 18px; margin-bottom: 10px; color: #333; }
+  dialog p { font-size: 13px; color: #666; line-height: 1.45; margin-bottom: 12px; }
+  dialog a { color: #5a3fd6; }
+  dialog input {
+    width: 100%; padding: 10px 12px; border: 2px solid #ddd; border-radius: 10px;
+    font-size: 14px; margin-bottom: 14px; outline: none;
+  }
+  dialog input:focus { border-color: #7c5cff; }
+  .dlgRow { display: flex; gap: 10px; justify-content: flex-end; }
+  .dlgRow button {
+    border: none; border-radius: 10px; padding: 10px 18px;
+    font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .dlgSave { background: #7c5cff; color: #fff; }
+  .dlgCancel { background: #eee; color: #555; }
+  #keyStatus { font-size: 12px; margin-bottom: 10px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🇩🇪 Wie heißt das?</h1>
+  <button id="gearBtn" title="Настройки">⚙️</button>
+</header>
+
+<main>
+  <!-- IDLE -->
+  <div class="screen active" id="scrIdle">
+    <div class="hint">Нажми на кнопку и спроси слово! 🗣️</div>
+    <button id="micBtn">🎤</button>
+    <div class="subhint">Например: «Как будет по-немецки лампа?»</div>
+    <button id="typeLink">⌨️ напечатать слово</button>
+    <div id="typeBox">
+      <input id="typeInput" type="text" placeholder="Напиши слово..." autocomplete="off">
+      <button id="typeGo">➜</button>
+    </div>
+  </div>
+
+  <!-- LISTENING -->
+  <div class="screen" id="scrListen">
+    <div class="hint">Слушаю... говори! 👂</div>
+    <button class="pulse" id="stopBtn">🎤</button>
+  </div>
+
+  <!-- THINKING -->
+  <div class="screen" id="scrThink">
+    <div class="hint">Думаю... 🤔</div>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="screen" id="scrResult">
+    <div id="resEmoji">💡</div>
+    <div id="resRu">лампа</div>
+    <div id="resDe"><span class="art-die">die</span> <span class="word">Lampe</span></div>
+    <div class="row">
+      <button class="roundBtn" id="againSpeak" title="Повторить">🔊</button>
+      <button class="bigBtn" id="nextBtn">Ещё! 🎤</button>
+    </div>
+  </div>
+
+  <!-- UNKNOWN -->
+  <div class="screen" id="scrUnknown">
+    <div id="unkEmoji" style="font-size:100px">🤷</div>
+    <div class="hint" id="unkText">Ой, я не расслышал. Попробуй ещё раз!</div>
+    <button class="bigBtn" id="retryBtn">Ещё раз 🎤</button>
+  </div>
+
+  <!-- NOT SUPPORTED -->
+  <div class="screen" id="scrNoMic">
+    <div style="font-size:80px">😢</div>
+    <div class="hint">Микрофон тут не работает</div>
+    <div class="subhint">Открой эту страницу в Chrome (Android) или Safari (iPad/iPhone). А пока можно печатать слова:</div>
+    <div id="typeBox2" class="row" style="width:100%;max-width:340px">
+      <input id="typeInput2" type="text" placeholder="Напиши слово..." autocomplete="off"
+             style="flex:1;border:none;border-radius:14px;padding:12px 16px;font-size:18px;outline:none;">
+      <button id="typeGo2" style="border:none;border-radius:14px;padding:12px 18px;font-size:18px;font-weight:700;background:#ffd76a;color:#5a3fd6;cursor:pointer;">➜</button>
+    </div>
+  </div>
+</main>
+
+<!-- SETTINGS (for parents) -->
+<dialog id="dlgSettings">
+  <h2>⚙️ Настройки (для родителей)</h2>
+  <p>Приложение знает ~300 детских слов без интернета. Чтобы оно отвечало на <b>любые</b> слова, вставьте бесплатный ключ
+     <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio (Gemini)</a>.
+     Ключ хранится только на этом устройстве.</p>
+  <div id="keyStatus"></div>
+  <input id="keyInput" type="password" placeholder="Gemini API key (необязательно)" autocomplete="off">
+  <div class="dlgRow">
+    <button class="dlgCancel" id="dlgCancel">Закрыть</button>
+    <button class="dlgSave" id="dlgSave">Сохранить</button>
+  </div>
+</dialog>
+
+<script>
+/* ============================================================
+   СЛОВАРЬ: русский → немецкий (артикль отдельно) + эмодзи.
+   Работает офлайн, без всяких API.
+   ============================================================ */
+const DICT = {
+  // --- животные ---
+  "кошка":["die","Katze","🐱"], "кот":["der","Kater","🐱"], "котенок":["das","Kätzchen","🐱"],
+  "собака":["der","Hund","🐶"], "щенок":["der","Welpe","🐶"],
+  "лошадь":["das","Pferd","🐴"], "пони":["das","Pony","🐴"],
+  "корова":["die","Kuh","🐮"], "свинья":["das","Schwein","🐷"], "коза":["die","Ziege","🐐"],
+  "овца":["das","Schaf","🐑"], "курица":["das","Huhn","🐔"], "петух":["der","Hahn","🐓"],
+  "утка":["die","Ente","🦆"], "гусь":["die","Gans","🪿"], "цыпленок":["das","Küken","🐤"],
+  "лев":["der","Löwe","🦁"], "тигр":["der","Tiger","🐯"], "слон":["der","Elefant","🐘"],
+  "жираф":["die","Giraffe","🦒"], "зебра":["das","Zebra","🦓"], "обезьяна":["der","Affe","🐵"],
+  "медведь":["der","Bär","🐻"], "мишка":["der","Teddybär","🧸"], "волк":["der","Wolf","🐺"],
+  "лиса":["der","Fuchs","🦊"], "заяц":["der","Hase","🐰"], "кролик":["das","Kaninchen","🐇"],
+  "еж":["der","Igel","🦔"], "ежик":["der","Igel","🦔"], "белка":["das","Eichhörnchen","🐿️"],
+  "мышь":["die","Maus","🐭"], "мышка":["die","Maus","🐭"], "крыса":["die","Ratte","🐀"],
+  "птица":["der","Vogel","🐦"], "птичка":["der","Vogel","🐦"], "рыба":["der","Fisch","🐟"],
+  "рыбка":["der","Fisch","🐠"], "акула":["der","Hai","🦈"], "дельфин":["der","Delfin","🐬"],
+  "кит":["der","Wal","🐳"], "черепаха":["die","Schildkröte","🐢"], "лягушка":["der","Frosch","🐸"],
+  "змея":["die","Schlange","🐍"], "ящерица":["die","Eidechse","🦎"], "крокодил":["das","Krokodil","🐊"],
+  "динозавр":["der","Dinosaurier","🦖"], "дракон":["der","Drache","🐉"],
+  "бабочка":["der","Schmetterling","🦋"], "пчела":["die","Biene","🐝"], "муравей":["die","Ameise","🐜"],
+  "паук":["die","Spinne","🕷️"], "муха":["die","Fliege","🪰"], "комар":["die","Mücke","🦟"],
+  "улитка":["die","Schnecke","🐌"], "божья коровка":["der","Marienkäfer","🐞"],
+  "пингвин":["der","Pinguin","🐧"], "сова":["die","Eule","🦉"], "орел":["der","Adler","🦅"],
+  "попугай":["der","Papagei","🦜"], "олень":["der","Hirsch","🦌"], "кенгуру":["das","Känguru","🦘"],
+  "панда":["der","Panda","🐼"], "коала":["der","Koala","🐨"], "верблюд":["das","Kamel","🐫"],
+  "осел":["der","Esel","🫏"], "бегемот":["das","Nilpferd","🦛"], "носорог":["das","Nashorn","🦏"],
+  "краб":["die","Krabbe","🦀"], "осьминог":["der","Oktopus","🐙"],
+  // --- семья и люди ---
+  "мама":["die","Mama","👩"], "папа":["der","Papa","👨"],
+  "бабушка":["die","Oma","👵"], "дедушка":["der","Opa","👴"],
+  "брат":["der","Bruder","👦"], "сестра":["die","Schwester","👧"],
+  "ребенок":["das","Kind","🧒"], "малыш":["das","Baby","👶"], "семья":["die","Familie","👨‍👩‍👧‍👦"],
+  "друг":["der","Freund","🤝"], "подруга":["die","Freundin","👭"],
+  "мальчик":["der","Junge","👦"], "девочка":["das","Mädchen","👧"], "человек":["der","Mensch","🧑"],
+  "врач":["der","Arzt","🧑‍⚕️"], "доктор":["der","Arzt","🧑‍⚕️"], "учитель":["der","Lehrer","🧑‍🏫"],
+  "полицейский":["der","Polizist","👮"], "пожарный":["der","Feuerwehrmann","🧑‍🚒"],
+  "повар":["der","Koch","🧑‍🍳"], "клоун":["der","Clown","🤡"],
+  "принцесса":["die","Prinzessin","👸"], "король":["der","König","🤴"], "королева":["die","Königin","👑"],
+  // --- тело ---
+  "голова":["der","Kopf","🙂"], "глаз":["das","Auge","👁️"], "глаза":["die","Augen","👀"],
+  "нос":["die","Nase","👃"], "рот":["der","Mund","👄"], "ухо":["das","Ohr","👂"],
+  "рука":["die","Hand","✋"], "нога":["das","Bein","🦵"], "палец":["der","Finger","☝️"],
+  "волосы":["die","Haare","💇"], "зуб":["der","Zahn","🦷"], "зубы":["die","Zähne","🦷"],
+  "живот":["der","Bauch","🫃"], "сердце":["das","Herz","❤️"], "спина":["der","Rücken","🧍"],
+  "лицо":["das","Gesicht","🙂"], "язык":["die","Zunge","👅"], "колено":["das","Knie","🦵"],
+  // --- еда ---
+  "хлеб":["das","Brot","🍞"], "булочка":["das","Brötchen","🥐"],
+  "молоко":["die","Milch","🥛"], "вода":["das","Wasser","💧"], "сок":["der","Saft","🧃"],
+  "чай":["der","Tee","🍵"], "какао":["der","Kakao","☕"],
+  "яблоко":["der","Apfel","🍎"], "банан":["die","Banane","🍌"], "апельсин":["die","Orange","🍊"],
+  "груша":["die","Birne","🍐"], "виноград":["die","Weintrauben","🍇"], "клубника":["die","Erdbeere","🍓"],
+  "малина":["die","Himbeere","🫐"], "вишня":["die","Kirsche","🍒"], "лимон":["die","Zitrone","🍋"],
+  "арбуз":["die","Wassermelone","🍉"], "дыня":["die","Melone","🍈"], "персик":["der","Pfirsich","🍑"],
+  "ананас":["die","Ananas","🍍"], "помидор":["die","Tomate","🍅"], "огурец":["die","Gurke","🥒"],
+  "морковь":["die","Karotte","🥕"], "морковка":["die","Karotte","🥕"],
+  "картошка":["die","Kartoffel","🥔"], "картофель":["die","Kartoffel","🥔"],
+  "лук":["die","Zwiebel","🧅"], "капуста":["der","Kohl","🥬"], "гриб":["der","Pilz","🍄"],
+  "сыр":["der","Käse","🧀"], "масло":["die","Butter","🧈"], "яйцо":["das","Ei","🥚"],
+  "мясо":["das","Fleisch","🥩"], "колбаса":["die","Wurst","🌭"], "сосиска":["das","Würstchen","🌭"],
+  "суп":["die","Suppe","🍲"], "каша":["der","Brei","🥣"], "макароны":["die","Nudeln","🍝"],
+  "рис":["der","Reis","🍚"], "пицца":["die","Pizza","🍕"], "блины":["die","Pfannkuchen","🥞"],
+  "торт":["die","Torte","🎂"], "пирог":["der","Kuchen","🥧"], "печенье":["der","Keks","🍪"],
+  "конфета":["das","Bonbon","🍬"], "шоколад":["die","Schokolade","🍫"],
+  "мороженое":["das","Eis","🍦"], "мед":["der","Honig","🍯"], "сахар":["der","Zucker","🍬"],
+  "соль":["das","Salz","🧂"], "завтрак":["das","Frühstück","🍳"],
+  "обед":["das","Mittagessen","🍽️"], "ужин":["das","Abendessen","🍽️"],
+  // --- дом ---
+  "дом":["das","Haus","🏠"], "домик":["das","Häuschen","🏠"], "квартира":["die","Wohnung","🏢"],
+  "комната":["das","Zimmer","🛋️"], "кухня":["die","Küche","🍳"],
+  "ванная":["das","Badezimmer","🛁"], "ванна":["die","Badewanne","🛁"], "туалет":["die","Toilette","🚽"],
+  "дверь":["die","Tür","🚪"], "окно":["das","Fenster","🪟"],
+  "стол":["der","Tisch","🪵"], "стул":["der","Stuhl","🪑"], "кровать":["das","Bett","🛏️"],
+  "диван":["das","Sofa","🛋️"], "шкаф":["der","Schrank","🚪"], "лампа":["die","Lampe","💡"],
+  "телевизор":["der","Fernseher","📺"], "телефон":["das","Telefon","📱"],
+  "компьютер":["der","Computer","💻"], "планшет":["das","Tablet","📱"],
+  "часы":["die","Uhr","⌚"], "зеркало":["der","Spiegel","🪞"], "ключ":["der","Schlüssel","🔑"],
+  "книга":["das","Buch","📖"], "книжка":["das","Buch","📖"], "картина":["das","Bild","🖼️"],
+  "ковер":["der","Teppich","🟫"], "подушка":["das","Kissen","🛏️"], "одеяло":["die","Decke","🛌"],
+  "лестница":["die","Treppe","🪜"], "холодильник":["der","Kühlschrank","🧊"],
+  "чашка":["die","Tasse","☕"], "кружка":["die","Tasse","☕"], "тарелка":["der","Teller","🍽️"],
+  "ложка":["der","Löffel","🥄"], "вилка":["die","Gabel","🍴"], "нож":["das","Messer","🔪"],
+  "кастрюля":["der","Topf","🍲"], "ножницы":["die","Schere","✂️"],
+  "мыло":["die","Seife","🧼"], "полотенце":["das","Handtuch","🧻"],
+  "зубная щетка":["die","Zahnbürste","🪥"], "щетка":["die","Bürste","🪥"], "расческа":["der","Kamm","💇"],
+  // --- игрушки и игры ---
+  "игрушка":["das","Spielzeug","🧸"], "мяч":["der","Ball","⚽"], "мячик":["der","Ball","⚽"],
+  "кукла":["die","Puppe","🪆"], "кубики":["die","Bausteine","🧱"],
+  "машинка":["das","Auto","🚗"], "поезд":["der","Zug","🚂"], "паровоз":["die","Lokomotive","🚂"],
+  "самолет":["das","Flugzeug","✈️"], "кораблик":["das","Schiff","🚢"], "корабль":["das","Schiff","🚢"],
+  "велосипед":["das","Fahrrad","🚲"], "самокат":["der","Roller","🛴"],
+  "качели":["die","Schaukel","🎠"], "горка":["die","Rutsche","🛝"], "песочница":["der","Sandkasten","🏖️"],
+  "воздушный шар":["der","Luftballon","🎈"], "шарик":["der","Luftballon","🎈"],
+  "подарок":["das","Geschenk","🎁"], "игра":["das","Spiel","🎲"], "пазл":["das","Puzzle","🧩"],
+  "карандаш":["der","Bleistift","✏️"], "ручка":["der","Stift","🖊️"], "фломастер":["der","Filzstift","🖍️"],
+  "краски":["die","Farben","🎨"], "бумага":["das","Papier","📄"], "клей":["der","Kleber","🩹"],
+  "рюкзак":["der","Rucksack","🎒"], "робот":["der","Roboter","🤖"],
+  // --- транспорт ---
+  "машина":["das","Auto","🚗"], "автобус":["der","Bus","🚌"], "трамвай":["die","Straßenbahn","🚋"],
+  "метро":["die","U-Bahn","🚇"], "грузовик":["der","Lastwagen","🚚"], "трактор":["der","Traktor","🚜"],
+  "вертолет":["der","Hubschrauber","🚁"], "ракета":["die","Rakete","🚀"], "лодка":["das","Boot","🛶"],
+  "мотоцикл":["das","Motorrad","🏍️"],
+  "полицейская машина":["das","Polizeiauto","🚓"], "скорая помощь":["der","Krankenwagen","🚑"],
+  "пожарная машина":["das","Feuerwehrauto","🚒"],
+  // --- природа ---
+  "солнце":["die","Sonne","☀️"], "солнышко":["die","Sonne","☀️"], "луна":["der","Mond","🌙"],
+  "звезда":["der","Stern","⭐"], "звездочка":["der","Stern","⭐"], "небо":["der","Himmel","🌤️"],
+  "облако":["die","Wolke","☁️"], "тучка":["die","Wolke","☁️"], "дождь":["der","Regen","🌧️"],
+  "дождик":["der","Regen","🌧️"], "снег":["der","Schnee","❄️"], "ветер":["der","Wind","💨"],
+  "гроза":["das","Gewitter","⛈️"], "радуга":["der","Regenbogen","🌈"],
+  "дерево":["der","Baum","🌳"], "цветок":["die","Blume","🌸"], "цветочек":["die","Blume","🌸"],
+  "роза":["die","Rose","🌹"], "трава":["das","Gras","🌱"], "лист":["das","Blatt","🍃"],
+  "листик":["das","Blatt","🍃"], "лес":["der","Wald","🌲"], "гора":["der","Berg","⛰️"],
+  "река":["der","Fluss","🏞️"], "море":["das","Meer","🌊"], "озеро":["der","See","🏞️"],
+  "пляж":["der","Strand","🏖️"], "песок":["der","Sand","🏖️"], "камень":["der","Stein","🪨"],
+  "камушек":["der","Stein","🪨"], "огонь":["das","Feuer","🔥"], "земля":["die","Erde","🌍"],
+  // --- одежда ---
+  "одежда":["die","Kleidung","👕"], "футболка":["das","T-Shirt","👕"], "майка":["das","T-Shirt","👕"],
+  "штаны":["die","Hose","👖"], "брюки":["die","Hose","👖"], "джинсы":["die","Jeans","👖"],
+  "платье":["das","Kleid","👗"], "юбка":["der","Rock","👗"], "куртка":["die","Jacke","🧥"],
+  "свитер":["der","Pullover","🧶"], "кофта":["die","Strickjacke","🧶"],
+  "шапка":["die","Mütze","🧢"], "шарф":["der","Schal","🧣"], "перчатки":["die","Handschuhe","🧤"],
+  "варежки":["die","Fäustlinge","🧤"], "носки":["die","Socken","🧦"],
+  "ботинки":["die","Schuhe","👟"], "туфли":["die","Schuhe","👞"], "сапоги":["die","Stiefel","👢"],
+  "тапочки":["die","Hausschuhe","🥿"], "пижама":["der","Schlafanzug","🩱"],
+  "очки":["die","Brille","👓"], "зонт":["der","Regenschirm","☂️"], "зонтик":["der","Regenschirm","☂️"],
+  // --- цвета (без артикля) ---
+  "красный":["","rot","🔴"], "синий":["","blau","🔵"], "зеленый":["","grün","🟢"],
+  "желтый":["","gelb","🟡"], "оранжевый":["","orange","🟠"], "фиолетовый":["","lila","🟣"],
+  "розовый":["","rosa","🩷"], "белый":["","weiß","⚪"], "черный":["","schwarz","⚫"],
+  "коричневый":["","braun","🟤"], "серый":["","grau","🩶"], "голубой":["","hellblau","💙"],
+  "цвет":["die","Farbe","🎨"],
+  // --- числа ---
+  "один":["","eins","1️⃣"], "два":["","zwei","2️⃣"], "три":["","drei","3️⃣"],
+  "четыре":["","vier","4️⃣"], "пять":["","fünf","5️⃣"], "шесть":["","sechs","6️⃣"],
+  "семь":["","sieben","7️⃣"], "восемь":["","acht","8️⃣"], "девять":["","neun","9️⃣"],
+  "десять":["","zehn","🔟"],
+  // --- слова и фразы ---
+  "привет":["","Hallo!","👋"], "пока":["","Tschüss!","👋"], "спасибо":["","Danke!","🙏"],
+  "пожалуйста":["","Bitte!","😊"], "да":["","ja","👍"], "нет":["","nein","👎"],
+  "доброе утро":["","Guten Morgen!","🌅"], "добрый день":["","Guten Tag!","☀️"],
+  "спокойной ночи":["","Gute Nacht!","🌙"], "извини":["","Entschuldigung!","🙇"],
+  "я тебя люблю":["","Ich liebe dich!","❤️"], "с днем рождения":["","Alles Gute zum Geburtstag!","🎂"],
+  // --- глаголы ---
+  "играть":["","spielen","🪁"], "спать":["","schlafen","😴"], "есть":["","essen","🍽️"],
+  "кушать":["","essen","🍽️"], "пить":["","trinken","🥤"], "бегать":["","laufen","🏃"],
+  "бежать":["","laufen","🏃"], "прыгать":["","springen","🤸"], "плавать":["","schwimmen","🏊"],
+  "петь":["","singen","🎤"], "танцевать":["","tanzen","💃"], "рисовать":["","malen","🎨"],
+  "читать":["","lesen","📖"], "идти":["","gehen","🚶"], "гулять":["","spazieren gehen","🚶"],
+  "смотреть":["","schauen","👀"], "слушать":["","hören","👂"], "говорить":["","sprechen","🗣️"],
+  "смеяться":["","lachen","😄"], "плакать":["","weinen","😢"], "помогать":["","helfen","🤝"],
+  "любить":["","lieben","❤️"], "хотеть":["","wollen","🙋"], "летать":["","fliegen","🕊️"],
+  // --- прилагательные ---
+  "большой":["","groß","🐘"], "маленький":["","klein","🐭"], "хороший":["","gut","👍"],
+  "плохой":["","schlecht","👎"], "быстрый":["","schnell","🏎️"], "медленный":["","langsam","🐌"],
+  "горячий":["","heiß","🔥"], "холодный":["","kalt","❄️"], "веселый":["","lustig","😄"],
+  "грустный":["","traurig","😢"], "красивый":["","schön","🌸"], "новый":["","neu","✨"],
+  "старый":["","alt","🏚️"], "сладкий":["","süß","🍭"], "вкусный":["","lecker","😋"],
+  // --- разное ---
+  "школа":["die","Schule","🏫"], "детский сад":["der","Kindergarten","🏫"],
+  "тетрадь":["das","Heft","📓"], "деньги":["das","Geld","💰"],
+  "магазин":["der","Laden","🏪"], "парк":["der","Park","🌳"], "зоопарк":["der","Zoo","🦁"],
+  "улица":["die","Straße","🛣️"], "город":["die","Stadt","🏙️"], "музыка":["die","Musik","🎵"],
+  "песня":["das","Lied","🎶"], "мультик":["der","Zeichentrickfilm","📺"],
+  "сказка":["das","Märchen","📚"], "день":["der","Tag","☀️"], "ночь":["die","Nacht","🌙"],
+  "утро":["der","Morgen","🌅"], "вечер":["der","Abend","🌆"],
+  "зима":["der","Winter","☃️"], "весна":["der","Frühling","🌷"], "лето":["der","Sommer","☀️"],
+  "осень":["der","Herbst","🍂"], "день рождения":["der","Geburtstag","🎂"],
+  "елка":["der","Tannenbaum","🎄"], "елочка":["der","Tannenbaum","🎄"],
+  "снеговик":["der","Schneemann","⛄"], "снежинка":["die","Schneeflocke","❄️"],
+  "свеча":["die","Kerze","🕯️"], "сюрприз":["die","Überraschung","🎁"],
+  "имя":["der","Name","📛"], "слово":["das","Wort","💬"]
+};
+
+// слова-паразиты, которые убираем из распознанной фразы
+const FILLERS = new Set([
+  "как","будет","по-немецки","по","немецки","немецкий","немецком","на",
+  "слово","скажи","скажите","а","и","ну","это","что","такое","переведи",
+  "перевести","мне","пожалуйста","алекса","сири","эй"
+]);
+
+/* ===================== УТИЛИТЫ ===================== */
+const $ = id => document.getElementById(id);
+const screens = ["scrIdle","scrListen","scrThink","scrResult","scrUnknown","scrNoMic"];
+function show(id) {
+  screens.forEach(s => $(s).classList.toggle("active", s === id));
+}
+function norm(s) {
+  return s.toLowerCase().replace(/ё/g,"е").replace(/[^a-zа-я0-9\s-]/gi," ")
+          .replace(/\s+/g," ").trim();
+}
+
+/* ===================== ПОИСК В СЛОВАРЕ ===================== */
+function extractQuery(phrase) {
+  const words = norm(phrase).split(" ").filter(w => w && !FILLERS.has(w));
+  return words.join(" ");
+}
+function dictLookup(query) {
+  if (!query) return null;
+  if (DICT[query]) return { ru: query, e: DICT[query] };
+  // каждое слово по отдельности
+  for (const w of query.split(" ")) {
+    if (DICT[w]) return { ru: w, e: DICT[w] };
+  }
+  // простое отбрасывание окончаний: "лампу" → "ламп" → совпадение по началу
+  for (const w of query.split(" ")) {
+    if (w.length < 4) continue;
+    for (const cut of [1, 2]) {
+      const stem = w.slice(0, w.length - cut);
+      for (const key of Object.keys(DICT)) {
+        if (!key.includes(" ") && key.length >= 4 &&
+            (key.startsWith(stem) || stem.startsWith(key.slice(0, key.length - 1)))) {
+          return { ru: key, e: DICT[key] };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/* ===================== GEMINI (опциональный fallback) ===================== */
+function geminiKey() { return localStorage.getItem("geminiKey") || ""; }
+
+async function geminiLookup(query) {
+  const key = geminiKey();
+  if (!key) return null;
+  const prompt =
+    'Ребёнок спросил, как сказать по-немецки: «' + query + '». ' +
+    'Ответь строго JSON без markdown: {"ru":"русское слово (именительный падеж)",' +
+    '"art":"артикль der/die/das или пустая строка если не существительное",' +
+    '"de":"немецкое слово без артикля","emoji":"один подходящий эмодзи"}. ' +
+    'Если фраза бессмысленна или это не запрос слова, ответь {"error":true}.';
+  try {
+    const resp = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" +
+      encodeURIComponent(key),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+        })
+      });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const obj = JSON.parse(text);
+    if (obj.error || !obj.de) return null;
+    return { ru: obj.ru || query, e: [obj.art || "", obj.de, obj.emoji || "✨"] };
+  } catch (err) {
+    console.warn("Gemini error:", err);
+    return null;
+  }
+}
+
+/* ===================== ОЗВУЧКА (немецкий голос) ===================== */
+let deVoice = null;
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  deVoice = voices.find(v => v.lang === "de-DE" && /google|anna|petra|helena/i.test(v.name))
+         || voices.find(v => v.lang === "de-DE")
+         || voices.find(v => v.lang && v.lang.startsWith("de"))
+         || null;
+}
+if ("speechSynthesis" in window) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+function speakGerman(text) {
+  if (!("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "de-DE";
+  if (deVoice) u.voice = deVoice;
+  u.rate = 0.85;
+  u.pitch = 1.05;
+  speechSynthesis.speak(u);
+}
+
+/* ===================== ЗВУКОВОЙ СИГНАЛ ===================== */
+let audioCtx = null;
+function beep(freq, dur) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+/* ===================== РАСПОЗНАВАНИЕ РЕЧИ ===================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let recActive = false;
+
+function startListening() {
+  if (!SR) { show("scrNoMic"); return; }
+  if (recActive) return;
+  recognition = new SR();
+  recognition.lang = "ru-RU";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 3;
+  recognition.continuous = false;
+
+  recActive = true;
+  show("scrListen");
+  beep(880, 0.15);
+
+  let gotResult = false;
+
+  recognition.onresult = (ev) => {
+    gotResult = true;
+    recActive = false;
+    const alternatives = [];
+    for (let i = 0; i < ev.results[0].length; i++) {
+      alternatives.push(ev.results[0][i].transcript);
+    }
+    handlePhrase(alternatives);
+  };
+  recognition.onerror = (ev) => {
+    recActive = false;
+    if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+      show("scrNoMic");
+    } else {
+      showUnknown("Я ничего не услышал 🙉 Попробуй ещё раз!");
+    }
+  };
+  recognition.onend = () => {
+    recActive = false;
+    if (!gotResult && $("scrListen").classList.contains("active")) {
+      showUnknown("Я ничего не услышал 🙉 Попробуй ещё раз!");
+    }
+  };
+  try { recognition.start(); }
+  catch (e) { recActive = false; showUnknown("Ой, что-то сломалось. Ещё разок!"); }
+}
+
+function stopListening() {
+  if (recognition) { try { recognition.stop(); } catch (e) {} }
+}
+
+/* ===================== ОСНОВНАЯ ЛОГИКА ===================== */
+async function handlePhrase(alternatives) {
+  show("scrThink");
+
+  // 1. словарь по каждому варианту распознавания
+  for (const alt of alternatives) {
+    const q = extractQuery(alt);
+    const hit = dictLookup(q);
+    if (hit) { showResult(hit); return; }
+  }
+
+  // 2. Gemini fallback (если родитель добавил ключ)
+  const mainQuery = extractQuery(alternatives[0] || "");
+  if (mainQuery && geminiKey()) {
+    const ai = await geminiLookup(mainQuery);
+    if (ai) { showResult(ai); return; }
+  }
+
+  if (!mainQuery) {
+    showUnknown("Я не расслышал 🙉 Скажи ещё раз!");
+  } else {
+    showUnknown("«" + mainQuery + "» — я пока не знаю это слово 🤔");
+  }
+}
+
+let lastSpeech = "";
+function showResult(hit) {
+  const [art, de, emoji] = hit.e;
+  $("resEmoji").textContent = emoji;
+  $("resRu").textContent = hit.ru;
+  const deEl = $("resDe");
+  deEl.innerHTML = "";
+  if (art) {
+    const a = document.createElement("span");
+    a.className = "art-" + art;
+    a.textContent = art + " ";
+    deEl.appendChild(a);
+  }
+  const w = document.createElement("span");
+  w.className = "word";
+  w.textContent = de;
+  deEl.appendChild(w);
+
+  lastSpeech = (art ? art + " " : "") + de;
+  show("scrResult");
+  beep(1320, 0.12);
+  setTimeout(() => speakGerman(lastSpeech), 250);
+}
+
+function showUnknown(text) {
+  $("unkText").textContent = text;
+  show("scrUnknown");
+  beep(300, 0.2);
+}
+
+/* ===================== КНОПКИ ===================== */
+$("micBtn").addEventListener("click", startListening);
+$("stopBtn").addEventListener("click", stopListening);
+$("nextBtn").addEventListener("click", startListening);
+$("retryBtn").addEventListener("click", startListening);
+$("againSpeak").addEventListener("click", () => speakGerman(lastSpeech));
+$("resDe").addEventListener("click", () => speakGerman(lastSpeech));
+
+// печать слова (fallback)
+$("typeLink").addEventListener("click", () => {
+  $("typeBox").classList.toggle("open");
+  if ($("typeBox").classList.contains("open")) $("typeInput").focus();
+});
+function submitTyped(inputEl) {
+  const v = inputEl.value.trim();
+  if (!v) return;
+  inputEl.value = "";
+  inputEl.blur();
+  handlePhrase([v]);
+}
+$("typeGo").addEventListener("click", () => submitTyped($("typeInput")));
+$("typeInput").addEventListener("keydown", e => { if (e.key === "Enter") submitTyped($("typeInput")); });
+$("typeGo2").addEventListener("click", () => submitTyped($("typeInput2")));
+$("typeInput2").addEventListener("keydown", e => { if (e.key === "Enter") submitTyped($("typeInput2")); });
+
+/* ===================== НАСТРОЙКИ ===================== */
+const dlg = $("dlgSettings");
+$("gearBtn").addEventListener("click", () => {
+  $("keyInput").value = geminiKey();
+  $("keyStatus").textContent = geminiKey()
+    ? "✅ Ключ сохранён — AI-режим включён"
+    : "ℹ️ Без ключа работает встроенный словарь (~300 слов)";
+  $("keyStatus").style.color = geminiKey() ? "#2fae6e" : "#888";
+  dlg.showModal();
+});
+$("dlgSave").addEventListener("click", () => {
+  const v = $("keyInput").value.trim();
+  if (v) localStorage.setItem("geminiKey", v);
+  else localStorage.removeItem("geminiKey");
+  dlg.close();
+});
+$("dlgCancel").addEventListener("click", () => dlg.close());
+
+// на старте: если распознавание не поддерживается — сразу показать fallback
+if (!SR) show("scrNoMic");
+</script>
+</body>
+</html>

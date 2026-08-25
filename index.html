@@ -191,6 +191,7 @@
   <div class="screen" id="scrListen">
     <div class="hint">Слушаю... говори! 👂</div>
     <button class="pulse" id="stopBtn">🎤</button>
+    <div class="subhint" id="listenPreview" style="min-height:1.5em;font-size:18px"></div>
   </div>
 
   <!-- THINKING -->
@@ -409,7 +410,12 @@ const DICT = {
   "старый":["","alt","🏚️"], "сладкий":["","süß","🍭"], "вкусный":["","lecker","😋"],
   // --- разное ---
   "школа":["die","Schule","🏫"], "детский сад":["der","Kindergarten","🏫"],
-  "тетрадь":["das","Heft","📓"], "деньги":["das","Geld","💰"],
+  "тетрадь":["das","Heft","📓"], "парта":["die","Schulbank","🪑"],
+  "доска":["die","Tafel","🖍️"], "мел":["die","Kreide","🖍️"],
+  "линейка":["das","Lineal","📏"], "ластик":["der","Radiergummi","🩹"],
+  "пенал":["das","Mäppchen","🖊️"], "учебник":["das","Lehrbuch","📚"],
+  "урок":["die","Stunde","🏫"], "перемена":["die","Pause","⏰"],
+  "деньги":["das","Geld","💰"],
   "магазин":["der","Laden","🏪"], "парк":["der","Park","🌳"], "зоопарк":["der","Zoo","🦁"],
   "улица":["die","Straße","🛣️"], "город":["die","Stadt","🏙️"], "музыка":["die","Musik","🎵"],
   "песня":["das","Lied","🎶"], "мультик":["der","Zeichentrickfilm","📺"],
@@ -469,19 +475,21 @@ function exactLookup(q) {
   return null;
 }
 
-// одно слово с отбрасыванием окончаний: "лампу" → "ламп" → "лампа"
+// одно слово с отбрасыванием окончаний: "лампу" → "лампа".
+// Строго: общая основа ≥ 4 букв, у слова хвост ≤ 2, у ключа ≤ 1 —
+// иначе "парта" ложно матчится на "парк" по общему "пар"
 function stemLookup(w) {
   if (!w || w.includes(" ") || w.length < 4) return null;
-  for (const cut of [1, 2]) {
-    const stem = w.slice(0, w.length - cut);
-    for (const key of Object.keys(DICT)) {
-      if (!key.includes(" ") && key.length >= 4 &&
-          (key.startsWith(stem) || stem.startsWith(key.slice(0, key.length - 1)))) {
-        return { ru: key, e: DICT[key] };
-      }
+  let best = null, bestLen = 0;
+  for (const key of Object.keys(DICT)) {
+    if (key.includes(" ")) continue;
+    let p = 0;
+    while (p < key.length && p < w.length && key[p] === w[p]) p++;
+    if (p >= 4 && key.length - p <= 1 && w.length - p <= 2 && p > bestLen) {
+      best = key; bestLen = p;
     }
   }
-  return null;
+  return best ? { ru: best, e: DICT[best] } : null;
 }
 
 /* ===================== GEMINI (опциональный fallback) ===================== */
@@ -592,40 +600,79 @@ function startListening() {
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   recognition = new SR();
   recognition.lang = "ru-RU";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 3;
-  recognition.continuous = false;
+  // interim + continuous: распознаватель не обрывает слово на полуслове —
+  // мы сами решаем, когда закончить (по паузе в речи)
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  recognition.maxAlternatives = 5;
 
   recActive = true;
   show("scrListen");
+  $("listenPreview").textContent = "";
   beep(880, 0.15);
 
-  let gotResult = false;
+  let stopped = false, handled = false, lastInterim = "";
+  const timers = [];
+  const finish = () => {
+    if (stopped) return;
+    stopped = true;
+    try { recognition.stop(); } catch (e) {}
+  };
+  timers.push(setTimeout(finish, 9000)); // жёсткий потолок записи
+  let quietTimer = setTimeout(finish, 6000); // тишина с самого начала
 
   recognition.onresult = (ev) => {
-    gotResult = true;
-    recActive = false;
-    const alternatives = [];
-    for (let i = 0; i < ev.results[0].length; i++) {
-      alternatives.push(ev.results[0][i].transcript);
+    clearTimeout(quietTimer);
+    let interim = "";
+    for (let i = 0; i < ev.results.length; i++) {
+      if (!ev.results[i].isFinal) interim += ev.results[i][0].transcript + " ";
     }
-    handlePhrase(alternatives);
+    lastInterim = interim.trim() || lastInterim;
+    const finalText = [...ev.results].filter(r => r.isFinal)
+                        .map(r => r[0].transcript).join(" ").trim();
+    $("listenPreview").textContent = (finalText + " " + interim).trim();
+    // ребёнок замолчал на 1.3 секунды → слово закончено
+    quietTimer = setTimeout(finish, 1300);
   };
   recognition.onerror = (ev) => {
     recActive = false;
     if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+      handled = true;
       show("scrNoMic");
+    }
+    // остальные ошибки (no-speech, network) дообработает onend
+  };
+  recognition.onend = () => {
+    recActive = false;
+    timers.forEach(clearTimeout);
+    clearTimeout(quietTimer);
+    if (handled || !$("scrListen").classList.contains("active")) return;
+    handled = true;
+
+    const results = recognition.lastResults || [];
+    const finals = results.filter(r => r.isFinal);
+    const alternatives = [];
+    if (finals.length === 1) {
+      // варианты распознавания в порядке уверенности
+      for (let i = 0; i < finals[0].length; i++) alternatives.push(finals[0][i].transcript);
+    } else if (finals.length > 1) {
+      alternatives.push(finals.map(r => r[0].transcript).join(" "));
+    }
+    // Android иногда не финализирует результат — берём последний черновик
+    if (!alternatives.length && lastInterim) alternatives.push(lastInterim);
+
+    if (alternatives.length) {
+      handlePhrase(alternatives);
     } else {
       showUnknown("Я ничего не услышал",
         "Я ничего не услышал. Нажми на жёлтую кнопку, подожди сигнал и говори громко!", "🙉");
     }
   };
-  recognition.onend = () => {
-    recActive = false;
-    if (!gotResult && $("scrListen").classList.contains("active")) {
-      showUnknown("Я ничего не услышал",
-        "Я ничего не услышал. Нажми на жёлтую кнопку, подожди сигнал и говори громко!", "🙉");
-    }
+  // запоминаем последний список результатов для onend
+  const origOnResult = recognition.onresult;
+  recognition.onresult = (ev) => {
+    recognition.lastResults = [...ev.results];
+    origOnResult(ev);
   };
   try { recognition.start(); }
   catch (e) {

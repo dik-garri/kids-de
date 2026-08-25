@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#7c5cff">
 <title>Wie heißt das? 🇩🇪</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='85'%3E%F0%9F%87%A9%F0%9F%87%AA%3C/text%3E%3C/svg%3E">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; }
@@ -503,6 +504,26 @@ const GEMINI_MODELS = [
   "gemini-3.5-flash", "gemini-3.6-flash", "gemini-2.5-flash"
 ];
 
+// запоминаем, какие модели тормозят или упираются в лимит,
+// и в следующий раз пробуем сначала здоровые
+function modelFails() {
+  try { return JSON.parse(localStorage.getItem("modelFails") || "{}"); }
+  catch (e) { return {}; }
+}
+function bumpModelFail(m) {
+  const s = modelFails();
+  s[m] = (s[m] || 0) + 1;
+  localStorage.setItem("modelFails", JSON.stringify(s));
+}
+function clearModelFail(m) {
+  const s = modelFails();
+  if (s[m]) { delete s[m]; localStorage.setItem("modelFails", JSON.stringify(s)); }
+}
+function orderedModels() {
+  const s = modelFails();
+  return [...GEMINI_MODELS].sort((a, b) => (s[a] || 0) - (s[b] || 0));
+}
+
 async function geminiLookup(query) {
   const key = geminiKey();
   if (!key) return null;
@@ -517,7 +538,7 @@ async function geminiLookup(query) {
     'Если запрос бессмысленный, ответь {"error":true}.';
 
   let sawRateLimit = false;
-  for (const model of GEMINI_MODELS) {
+  for (const model of orderedModels()) {
     try {
       const resp = await fetch(
         "https://generativelanguage.googleapis.com/v1beta/models/" + model +
@@ -525,7 +546,9 @@ async function geminiLookup(query) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined,
+          // 6 секунд на модель: ребёнок не должен ждать тормозов,
+          // в цепочке ещё пять запасных
+          signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined,
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
@@ -533,18 +556,22 @@ async function geminiLookup(query) {
         });
       if (!resp.ok) {
         console.warn(model + ": HTTP " + resp.status);
-        // неверный/заблокированный ключ — другие модели не помогут
-        if (resp.status === 400 || resp.status === 403) return null;
+        // 403 — ключ заблокирован, другие модели не помогут;
+        // 400 может быть капризом конкретной модели — идём дальше
+        if (resp.status === 403) return null;
         if (resp.status === 429) sawRateLimit = true;
-        continue; // 429 (лимит), 404 (модель закрыта), 5xx — следующая модель
+        bumpModelFail(model);
+        continue;
       }
       const data = await resp.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const obj = JSON.parse(text);
+      clearModelFail(model);
       if (obj.error || !obj.de) return null; // модель поняла: запрос бессмысленный
       return { ru: obj.ru || query, e: [obj.art || "", obj.de, obj.emoji || "✨"] };
     } catch (err) {
       console.warn(model + ":", err); // таймаут, сеть, кривой JSON — следующая модель
+      bumpModelFail(model);
     }
   }
   // все модели упёрлись в лимит — сообщим об этом отдельно

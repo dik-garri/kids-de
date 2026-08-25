@@ -449,9 +449,23 @@ function norm(s) {
 }
 
 /* ===================== ПОИСК В СЛОВАРЕ ===================== */
+// убираем повторы: Android-распознаватель часто финализирует одно и то же
+// несколько раз ("стража стража стража с копьем" → "стража с копьем")
+function dedupeWords(words) {
+  // подряд повторённые слова → одно
+  const out = [];
+  for (const w of words) if (w !== out[out.length - 1]) out.push(w);
+  // фраза, повторённая целиком n раз → один раз
+  for (let p = 1; p <= out.length / 2; p++) {
+    if (out.length % p === 0 && out.every((w, i) => w === out[i % p])) {
+      return out.slice(0, p);
+    }
+  }
+  return out;
+}
 function extractQuery(phrase) {
   const words = norm(phrase).split(" ").filter(w => w && !FILLERS.has(w));
-  return words.join(" ");
+  return dedupeWords(words).join(" ");
 }
 
 // выученные слова: ответы Gemini кэшируются в localStorage навсегда

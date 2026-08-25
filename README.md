@@ -59,3 +59,7 @@ gh api repos/{owner}/kids-de/pages -X POST -f "source[branch]=main" -f "source[p
 ```
 
 Формат: `"русское слово": ["артикль (или пустая строка)", "немецкое слово", "эмодзи"]`.
+
+---
+
+[Все проекты →](https://dik-garri.github.io/garry/)

@@ -161,7 +161,7 @@
   <div class="screen active" id="scrIdle">
     <div class="hint">Нажми на кнопку и спроси слово! 🗣️</div>
     <button id="micBtn">🎤</button>
-    <div class="subhint">Например: «Как будет по-немецки лампа?»</div>
+    <div class="subhint">Например: «Как будет по-немецки лампа?» или «Я иду домой»</div>
     <button id="typeLink">⌨️ напечатать слово</button>
     <div id="typeBox">
       <input id="typeInput" type="text" placeholder="Напиши слово..." autocomplete="off">
@@ -427,23 +427,38 @@ function extractQuery(phrase) {
   const words = norm(phrase).split(" ").filter(w => w && !FILLERS.has(w));
   return words.join(" ");
 }
-function dictLookup(query) {
-  if (!query) return null;
-  if (DICT[query]) return { ru: query, e: DICT[query] };
-  // каждое слово по отдельности
-  for (const w of query.split(" ")) {
-    if (DICT[w]) return { ru: w, e: DICT[w] };
-  }
-  // простое отбрасывание окончаний: "лампу" → "ламп" → совпадение по началу
-  for (const w of query.split(" ")) {
-    if (w.length < 4) continue;
-    for (const cut of [1, 2]) {
-      const stem = w.slice(0, w.length - cut);
-      for (const key of Object.keys(DICT)) {
-        if (!key.includes(" ") && key.length >= 4 &&
-            (key.startsWith(stem) || stem.startsWith(key.slice(0, key.length - 1)))) {
-          return { ru: key, e: DICT[key] };
-        }
+
+// выученные слова: ответы Gemini кэшируются в localStorage навсегда
+function learned() {
+  try { return JSON.parse(localStorage.getItem("learnedDict") || "{}"); }
+  catch (e) { return {}; }
+}
+function saveLearned(ru, entry) {
+  const d = learned();
+  d[norm(ru)] = entry;
+  const keys = Object.keys(d);
+  if (keys.length > 800) delete d[keys[0]]; // страховка от переполнения
+  localStorage.setItem("learnedDict", JSON.stringify(d));
+}
+
+// точное совпадение: встроенный словарь + выученные слова
+function exactLookup(q) {
+  if (!q) return null;
+  if (DICT[q]) return { ru: q, e: DICT[q] };
+  const L = learned();
+  if (L[q]) return { ru: q, e: L[q] };
+  return null;
+}
+
+// одно слово с отбрасыванием окончаний: "лампу" → "ламп" → "лампа"
+function stemLookup(w) {
+  if (!w || w.includes(" ") || w.length < 4) return null;
+  for (const cut of [1, 2]) {
+    const stem = w.slice(0, w.length - cut);
+    for (const key of Object.keys(DICT)) {
+      if (!key.includes(" ") && key.length >= 4 &&
+          (key.startsWith(stem) || stem.startsWith(key.slice(0, key.length - 1)))) {
+        return { ru: key, e: DICT[key] };
       }
     }
   }
@@ -458,10 +473,13 @@ async function geminiLookup(query) {
   if (!key) return null;
   const prompt =
     'Ребёнок спросил, как сказать по-немецки: «' + query + '». ' +
-    'Ответь строго JSON без markdown: {"ru":"русское слово (именительный падеж)",' +
-    '"art":"артикль der/die/das или пустая строка если не существительное",' +
-    '"de":"немецкое слово без артикля","emoji":"один подходящий эмодзи"}. ' +
-    'Если фраза бессмысленна или это не запрос слова, ответь {"error":true}.';
+    'Ответь строго JSON без markdown: {"ru":"...","art":"...","de":"...","emoji":"..."}. ' +
+    'Если это одно существительное: art — артикль der/die/das, de — слово без артикля, ' +
+    'ru — слово в именительном падеже. ' +
+    'Если это фраза, предложение, глагол или прилагательное: art — пустая строка, ' +
+    'de — простой разговорный немецкий перевод целиком, ru — исходная фраза. ' +
+    'emoji — один подходящий эмодзи. ' +
+    'Если запрос бессмысленный, ответь {"error":true}.';
   try {
     const resp = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" +
@@ -579,25 +597,48 @@ function stopListening() {
 async function handlePhrase(alternatives) {
   show("scrThink");
 
-  // 1. словарь по каждому варианту распознавания
-  for (const alt of alternatives) {
-    const q = extractQuery(alt);
-    const hit = dictLookup(q);
+  const queries = alternatives.map(extractQuery).filter(Boolean);
+  if (!queries.length) {
+    showUnknown("Я не расслышал 🙉 Скажи ещё раз!");
+    return;
+  }
+  const main = queries[0];
+  const isPhrase = main.includes(" ");
+
+  // 1. точное совпадение: встроенный словарь + выученные слова (и фразы тоже)
+  for (const q of queries) {
+    const hit = exactLookup(q);
     if (hit) { showResult(hit); return; }
   }
 
-  // 2. Gemini fallback (если родитель добавил ключ)
-  const mainQuery = extractQuery(alternatives[0] || "");
-  if (mainQuery && geminiKey()) {
-    const ai = await geminiLookup(mainQuery);
-    if (ai) { showResult(ai); return; }
+  // 2. одно слово: поиск с отбрасыванием окончаний
+  if (!isPhrase) {
+    for (const q of queries) {
+      const hit = stemLookup(q);
+      if (hit) { showResult(hit); return; }
+    }
   }
 
-  if (!mainQuery) {
-    showUnknown("Я не расслышал 🙉 Скажи ещё раз!");
-  } else {
-    showUnknown("«" + mainQuery + "» — я пока не знаю это слово 🤔");
+  // 3. Gemini: слово или целая фраза; ответ запоминаем навсегда
+  if (geminiKey()) {
+    const ai = await geminiLookup(main);
+    if (ai) {
+      saveLearned(ai.ru, ai.e);
+      showResult(ai);
+      return;
+    }
   }
+
+  // 4. без AI-ключа: хотя бы одно знакомое слово из фразы
+  if (isPhrase) {
+    for (const w of main.split(" ")) {
+      const hit = exactLookup(w) || stemLookup(w);
+      if (hit) { showResult(hit); return; }
+    }
+  }
+
+  showUnknown("«" + main + "» — я пока не знаю " +
+              (isPhrase ? "эту фразу" : "это слово") + " 🤔");
 }
 
 let lastSpeech = "";
@@ -617,6 +658,8 @@ function showResult(hit) {
   w.className = "word";
   w.textContent = de;
   deEl.appendChild(w);
+  // длинные фразы — шрифтом поменьше, чтобы влезали
+  deEl.style.fontSize = de.length > 18 ? "min(7vw, 32px)" : "";
 
   lastSpeech = (art ? art + " " : "") + de;
   show("scrResult");
@@ -659,9 +702,11 @@ $("typeInput2").addEventListener("keydown", e => { if (e.key === "Enter") submit
 const dlg = $("dlgSettings");
 $("gearBtn").addEventListener("click", () => {
   $("keyInput").value = geminiKey();
-  $("keyStatus").textContent = geminiKey()
+  const learnedCount = Object.keys(learned()).length;
+  $("keyStatus").textContent = (geminiKey()
     ? "✅ Ключ сохранён — AI-режим включён"
-    : "ℹ️ Без ключа работает встроенный словарь (~300 слов)";
+    : "ℹ️ Без ключа работает встроенный словарь (~300 слов)")
+    + (learnedCount ? " · выучено новых: " + learnedCount : "");
   $("keyStatus").style.color = geminiKey() ? "#2fae6e" : "#888";
   dlg.showModal();
 });

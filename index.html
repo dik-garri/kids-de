@@ -487,6 +487,10 @@ function stemLookup(w) {
 /* ===================== GEMINI (опциональный fallback) ===================== */
 function geminiKey() { return localStorage.getItem("geminiKey") || ""; }
 
+// пробуем модели по очереди: у каждой свой бесплатный дневной лимит,
+// поэтому цепочка и переживает ошибки, и расширяет квоту
+const GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+
 async function geminiLookup(query) {
   const key = geminiKey();
   if (!key) return null;
@@ -499,28 +503,37 @@ async function geminiLookup(query) {
     'de — простой разговорный немецкий перевод целиком, ru — исходная фраза. ' +
     'emoji — один подходящий эмодзи. ' +
     'Если запрос бессмысленный, ответь {"error":true}.';
-  try {
-    const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=" +
-      encodeURIComponent(key),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-        })
-      });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const obj = JSON.parse(text);
-    if (obj.error || !obj.de) return null;
-    return { ru: obj.ru || query, e: [obj.art || "", obj.de, obj.emoji || "✨"] };
-  } catch (err) {
-    console.warn("Gemini error:", err);
-    return null;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const resp = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/" + model +
+        ":generateContent?key=" + encodeURIComponent(key),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
+          })
+        });
+      if (!resp.ok) {
+        console.warn(model + ": HTTP " + resp.status);
+        // неверный/заблокированный ключ — другие модели не помогут
+        if (resp.status === 400 || resp.status === 403) return null;
+        continue; // 429 (лимит), 404, 5xx — пробуем следующую модель
+      }
+      const data = await resp.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const obj = JSON.parse(text);
+      if (obj.error || !obj.de) return null; // модель поняла: запрос бессмысленный
+      return { ru: obj.ru || query, e: [obj.art || "", obj.de, obj.emoji || "✨"] };
+    } catch (err) {
+      console.warn(model + ":", err); // таймаут, сеть, кривой JSON — следующая модель
+    }
   }
+  return null;
 }
 
 /* ===================== ОЗВУЧКА (немецкий голос) ===================== */

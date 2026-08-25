@@ -496,8 +496,12 @@ function stemLookup(w) {
 function geminiKey() { return localStorage.getItem("geminiKey") || ""; }
 
 // пробуем модели по очереди: у каждой свой бесплатный дневной лимит,
-// поэтому цепочка и переживает ошибки, и расширяет квоту
-const GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+// поэтому цепочка и переживает ошибки, и расширяет квоту.
+// Сначала быстрые lite-модели, потом обычные flash (актуально на 08.2026)
+const GEMINI_MODELS = [
+  "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite",
+  "gemini-3.5-flash", "gemini-3.6-flash", "gemini-2.5-flash"
+];
 
 async function geminiLookup(query) {
   const key = geminiKey();
@@ -512,6 +516,7 @@ async function geminiLookup(query) {
     'emoji — один подходящий эмодзи. ' +
     'Если запрос бессмысленный, ответь {"error":true}.';
 
+  let sawRateLimit = false;
   for (const model of GEMINI_MODELS) {
     try {
       const resp = await fetch(
@@ -530,7 +535,8 @@ async function geminiLookup(query) {
         console.warn(model + ": HTTP " + resp.status);
         // неверный/заблокированный ключ — другие модели не помогут
         if (resp.status === 400 || resp.status === 403) return null;
-        continue; // 429 (лимит), 404, 5xx — пробуем следующую модель
+        if (resp.status === 429) sawRateLimit = true;
+        continue; // 429 (лимит), 404 (модель закрыта), 5xx — следующая модель
       }
       const data = await resp.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -541,7 +547,8 @@ async function geminiLookup(query) {
       console.warn(model + ":", err); // таймаут, сеть, кривой JSON — следующая модель
     }
   }
-  return null;
+  // все модели упёрлись в лимит — сообщим об этом отдельно
+  return sawRateLimit ? { rateLimited: true } : null;
 }
 
 /* ===================== ОЗВУЧКА (немецкий голос) ===================== */
@@ -714,16 +721,18 @@ async function handlePhrase(alternatives) {
   }
 
   // 3. Gemini: слово или целая фраза; ответ запоминаем навсегда
+  let rateLimited = false;
   if (geminiKey()) {
     const ai = await geminiLookup(main);
-    if (ai) {
+    if (ai && !ai.rateLimited) {
       saveLearned(ai.ru, ai.e);
       showResult(ai);
       return;
     }
+    rateLimited = !!(ai && ai.rateLimited);
   }
 
-  // 4. без AI-ключа: хотя бы одно знакомое слово из фразы
+  // 4. AI не помог: хотя бы одно знакомое слово из фразы
   if (isPhrase) {
     for (const w of main.split(" ")) {
       const hit = exactLookup(w) || stemLookup(w);
@@ -731,6 +740,11 @@ async function handlePhrase(alternatives) {
     }
   }
 
+  if (rateLimited) {
+    showUnknown("Я немножко устал",
+      "Я немножко устал. Подожди минутку и попробуй ещё раз!", "😴");
+    return;
+  }
   showUnknown("«" + main + "» — я пока не знаю " +
               (isPhrase ? "эту фразу" : "это слово"),
     "Ой! Я пока не знаю " + (isPhrase ? "эту фразу" : "это слово") +

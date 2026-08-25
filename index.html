@@ -76,8 +76,14 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  #resEmoji { font-size: min(34vw, 130px); line-height: 1.1; }
-  #resRu { font-size: 20px; opacity: .75; font-weight: 600; }
+  #resEmoji { font-size: min(30vw, 110px); line-height: 1.1; }
+  #resRu {
+    font-size: min(9vw, 40px); font-weight: 900; letter-spacing: 2px;
+    line-height: 1.3; max-width: 92vw; word-wrap: break-word;
+  }
+  #resRu .syl-a { color: #ffd76a; }
+  #resRu .syl-b { color: #ffffff; }
+  #resRu .syl-sep { color: rgba(255,255,255,.45); font-weight: 400; }
   #resDe {
     font-size: min(11vw, 52px); font-weight: 900;
     background: rgba(255,255,255,.95);
@@ -671,11 +677,67 @@ async function handlePhrase(alternatives) {
     ". Нажми на жёлтую кнопку и попробуй другое слово!", "🤔");
 }
 
+/* ===================== РУССКИЕ СЛОГИ ===================== */
+// делит слово на слоги: "лампа" → ["лам","па"], "собака" → ["со","ба","ка"]
+function splitSyllables(word) {
+  const isV = ch => "аеёиоуыэюя".includes(ch);
+  const lower = word.toLowerCase();
+  if ([...lower].filter(isV).length < 2) return [word];
+  const sylls = [];
+  let cur = "", i = 0;
+  while (i < word.length) {
+    cur += word[i];
+    if (!isV(lower[i])) { i++; continue; }
+    // собираем согласные до следующей гласной (ь/ъ держим с согласной)
+    let j = i + 1;
+    const cluster = [];
+    while (j < word.length && !isV(lower[j])) {
+      let unit = word[j];
+      if (j + 1 < word.length && "ьъ".includes(lower[j + 1])) { unit += word[j + 1]; j++; }
+      cluster.push(unit); j++;
+    }
+    if (j >= word.length) {           // гласных больше нет — всё в последний слог
+      sylls.push(cur + cluster.join(""));
+      cur = ""; break;
+    }
+    if (cluster.length >= 2) {        // "лампа": первая согласная влево → лам-па
+      sylls.push(cur + cluster[0]);
+      cur = cluster.slice(1).join("");
+    } else {                          // "собака": согласная вправо → со-ба-ка
+      sylls.push(cur);
+      cur = cluster.join("");
+    }
+    i = j;
+  }
+  if (cur) sylls.push(cur);
+  return sylls;
+}
+
+// рисует слово по слогам разными цветами (как в букваре), фразы — по словам
+function renderSyllables(el, text) {
+  el.innerHTML = "";
+  text.split(" ").forEach((word, wi) => {
+    if (wi > 0) el.appendChild(document.createTextNode(" "));
+    splitSyllables(word).forEach((syl, si) => {
+      if (si > 0) {
+        const sep = document.createElement("span");
+        sep.className = "syl-sep";
+        sep.textContent = "-";
+        el.appendChild(sep);
+      }
+      const s = document.createElement("span");
+      s.className = si % 2 === 0 ? "syl-a" : "syl-b";
+      s.textContent = syl;
+      el.appendChild(s);
+    });
+  });
+}
+
 let lastSpeech = "";
 function showResult(hit) {
   const [art, de, emoji] = hit.e;
   $("resEmoji").textContent = emoji;
-  $("resRu").textContent = hit.ru;
+  renderSyllables($("resRu"), hit.ru);
   const deEl = $("resDe");
   deEl.innerHTML = "";
   if (art) {

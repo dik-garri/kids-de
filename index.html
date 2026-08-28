@@ -56,9 +56,7 @@
   #lastWord.empty { background: transparent; box-shadow: none; color: rgba(255,255,255,.85); font-size: 19px; }
   #wordGrid {
     display: grid; gap: 10px; width: 100%;
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    align-content: start;
-    flex: 1; overflow-y: auto;
+    flex: 1; min-height: 0;
     padding-bottom: 10px;
   }
   .tile {
@@ -66,13 +64,13 @@
     border: none; border-radius: 18px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 4px; padding: 8px 4px;
-    cursor: pointer; aspect-ratio: 1;
+    cursor: pointer; min-height: 0;
     box-shadow: 0 4px 12px rgba(0,0,0,.18);
     transition: transform .12s;
     font-family: inherit;
   }
   .tile:active { transform: scale(.88); }
-  .tile .tEmoji { font-size: 36px; line-height: 1.1; }
+  .tile .tEmoji { font-size: clamp(30px, 6vmin, 52px); line-height: 1.1; }
   .tile .tWord {
     font-size: 13px; font-weight: 800; color: #444;
     line-height: 1.1; word-break: break-word; text-align: center;
@@ -958,10 +956,11 @@ function showUnknown(text, spoken, emoji) {
 /* ===================== РЕЖИМ «УЧИТЬ СЛОВА» ===================== */
 const LEARN_GOAL = 10; // столько раз ребёнок слушает слово, чтобы оно стало выученным
 
-// источник слов для обучения: пока встроенный словарь;
-// в будущем сюда можно добавлять другие наборы (например, выученные через AI)
+// источник слов для обучения: встроенный словарь БЕЗ фраз (только слова);
+// порядок фиксированный — как в словаре (по темам). В будущем сюда можно
+// добавлять другие наборы (например, выученные через AI)
 function learnPool() {
-  return Object.keys(DICT);
+  return Object.keys(DICT).filter(w => !w.includes(" "));
 }
 function learnProgress() {
   try { return JSON.parse(localStorage.getItem("learnProgress") || "{}"); }
@@ -995,30 +994,28 @@ function germanFor(word) {
   return (art ? art + " " : "") + de;
 }
 
-// ---- доска: на экране одновременно 12–24 слова, остальные ждут в запасе ----
-function getBoard() {
-  try { return JSON.parse(localStorage.getItem("learnBoard") || "[]"); }
-  catch (e) { return []; }
-}
-function saveBoard(b) { localStorage.setItem("learnBoard", JSON.stringify(b)); }
+// ---- доска: слова идут строго по порядку словаря, без рандома.
+// На экране первые N невыученных слов; выучил — на его место приходит
+// следующее по порядку из запаса ----
 
-// сколько плиток помещается на этом экране
-function boardCapacity() {
-  const cols = Math.max(3, Math.floor((Math.min(window.innerWidth, 900) - 32) / 106));
-  const rows = Math.max(3, Math.floor((window.innerHeight - 170) / 106));
-  return Math.max(12, Math.min(24, cols * rows));
+// сетка колонок × строк, заполняющая экран целиком (12–24 плитки)
+function gridDims() {
+  const w = Math.min(window.innerWidth, 1100) - 32;
+  const h = window.innerHeight - 175;
+  let cols = Math.max(3, Math.round(w / 140));
+  let rows = Math.max(3, Math.round(h / 140));
+  while (cols * rows > 24) {
+    if (cols >= rows && cols > 3) cols--;
+    else if (rows > 3) rows--;
+    else break;
+  }
+  return { cols, rows };
 }
 
-// добираем слова из запаса до вместимости экрана
+// первые N невыученных слов в порядке словаря
 function fillBoard() {
-  const p = learnProgress();
-  let board = getBoard().filter(w => DICT[w] && (p[w] || 0) < LEARN_GOAL);
-  const cap = boardCapacity();
-  if (board.length > cap) board = board.slice(0, cap);
-  const reserve = shuffle(unlearnedWords().filter(w => !board.includes(w)));
-  while (board.length < cap && reserve.length) board.push(reserve.pop());
-  saveBoard(board);
-  return board;
+  const { cols, rows } = gridDims();
+  return unlearnedWords().slice(0, cols * rows);
 }
 
 function makeTile(word, fresh) {
@@ -1054,23 +1051,21 @@ function tapTile(tile, word) {
   speakGerman(germanFor(word));
   if (count < LEARN_GOAL) return;
 
-  // 10 нажатий: слово выучено — исчезает, из запаса приходит новое
+  // 10 нажатий: слово выучено — исчезает, на его место приходит
+  // следующее по порядку слово из запаса
   beep(1320, 0.12); setTimeout(() => beep(1760, 0.15), 150);
   try { navigator.vibrate && navigator.vibrate([40, 60, 40, 60, 80]); } catch (e) {}
   tile.querySelector(".tEmoji").textContent = "🎉";
   tile.classList.add("gone");
 
-  const board = getBoard();
-  const idx = board.indexOf(word);
-  const replacement = shuffle(unlearnedWords().filter(w => !board.includes(w)))[0];
-  if (replacement) board[idx] = replacement;
-  else board.splice(idx, 1);
-  saveBoard(board);
+  const displayed = new Set(
+    [...document.querySelectorAll("#wordGrid .tile")].map(t => t.dataset.word));
+  const replacement = unlearnedWords().find(w => !displayed.has(w));
 
   setTimeout(() => {
     if (replacement) tile.replaceWith(makeTile(replacement, true));
     else tile.remove();
-    if (!getBoard().length) showAllLearned();
+    if (!document.querySelector("#wordGrid .tile")) showAllLearned();
   }, 600);
 }
 
@@ -1089,6 +1084,10 @@ function renderBoard() {
   $("lastWord").className = "empty";
   $("lastWord").textContent = "Нажимай на слова и слушай! 👇";
   const grid = $("wordGrid");
+  const { cols, rows } = gridDims();
+  // плитки растягиваются и заполняют экран целиком, без пустого места
+  grid.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+  grid.style.gridTemplateRows = "repeat(" + rows + ", 1fr)";
   grid.innerHTML = "";
   board.forEach(w => grid.appendChild(makeTile(w, false)));
 }

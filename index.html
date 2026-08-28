@@ -70,11 +70,7 @@
     font-family: inherit;
   }
   .tile:active { transform: scale(.88); }
-  .tile .tEmoji { font-size: clamp(30px, 6vmin, 52px); line-height: 1.1; }
-  .tile .tWord {
-    font-size: 13px; font-weight: 800; color: #444;
-    line-height: 1.1; word-break: break-word; text-align: center;
-  }
+  .tile .tEmoji { font-size: clamp(48px, 12vmin, 104px); line-height: 1.15; }
   .tile.gone { animation: tileGone .55s forwards; pointer-events: none; }
   @keyframes tileGone {
     40% { transform: scale(1.25) rotate(8deg); }
@@ -1066,10 +1062,7 @@ function makeTile(word, fresh) {
   const e = document.createElement("div");
   e.className = "tEmoji";
   e.textContent = emoji;
-  const w = document.createElement("div");
-  w.className = "tWord";
-  w.textContent = word;
-  t.appendChild(e); t.appendChild(w);
+  t.appendChild(e);
   t.addEventListener("click", () => tapTile(t, word));
   return t;
 }

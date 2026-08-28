@@ -37,6 +37,24 @@
     font-size: 15px; font-weight: 800; cursor: pointer;
     box-shadow: 0 4px 10px rgba(0,0,0,.18);
   }
+  #learnedBtn {
+    background: rgba(255,255,255,.15); border: none; color: #fff;
+    height: 40px; padding: 0 12px; border-radius: 12px;
+    font-size: 15px; font-weight: 800; cursor: pointer;
+  }
+  #learnedGrid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+    max-height: 50vh; overflow-y: auto; margin-bottom: 14px;
+  }
+  .lTile {
+    background: #f3f0fe; border: none; border-radius: 12px;
+    padding: 8px 4px; cursor: pointer; font-family: inherit;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .lTile:active { transform: scale(.92); }
+  .lTile .e { font-size: 30px; }
+  .lTile .w { font-size: 11px; font-weight: 700; color: #666; text-align: center; }
   #scrLearn.active {
     justify-content: flex-start;
     width: 100%; height: 100%;
@@ -220,6 +238,7 @@
 <header>
   <h1>🇩🇪 Wie heißt das?</h1>
   <div style="display:flex;gap:8px">
+    <button id="learnedBtn" title="Выученные слова" style="display:none">⭐ 0</button>
     <button id="modeBtn" title="Режим">📚 учить</button>
     <button id="gearBtn" title="Настройки">⚙️</button>
   </div>
@@ -288,6 +307,16 @@
     </div>
   </div>
 </main>
+
+<!-- LEARNED WORDS: вернуть слово в игру -->
+<dialog id="dlgLearned">
+  <h2>⭐ Выученные слова</h2>
+  <p>Нажми на слово, чтобы вернуть его в игру — его нужно будет выучить заново.</p>
+  <div id="learnedGrid"></div>
+  <div class="dlgRow">
+    <button class="dlgCancel" id="dlgLearnedClose">Закрыть</button>
+  </div>
+</dialog>
 
 <!-- SETTINGS (for parents) -->
 <dialog id="dlgSettings">
@@ -1099,6 +1128,7 @@ function tapTile(tile, word) {
     if (replacement) tile.replaceWith(makeTile(replacement, true));
     else tile.remove();
     if (!document.querySelector("#wordGrid .tile")) showAllLearned();
+    updateLearnedBtn();
   }, 600);
 }
 
@@ -1134,6 +1164,51 @@ window.addEventListener("resize", () => {
   }, 300);
 });
 
+/* ---- возврат выученных слов в игру ---- */
+function learnedWords() {
+  const p = learnProgress();
+  return learnPool().filter(w => (p[w] || 0) >= LEARN_GOAL);
+}
+function updateLearnedBtn() {
+  const n = learnedWords().length;
+  const btn = $("learnedBtn");
+  btn.style.display =
+    (localStorage.getItem("appMode") === "learn" && n > 0) ? "" : "none";
+  btn.textContent = "⭐ " + n;
+}
+function renderLearnedDialog() {
+  const grid = $("learnedGrid");
+  grid.innerHTML = "";
+  for (const w of learnedWords()) {
+    const t = document.createElement("button");
+    t.className = "lTile";
+    const e = document.createElement("div");
+    e.className = "e";
+    e.textContent = DICT[w][2];
+    const l = document.createElement("div");
+    l.className = "w";
+    l.textContent = w;
+    t.appendChild(e); t.appendChild(l);
+    t.addEventListener("click", () => returnWord(w));
+    grid.appendChild(t);
+  }
+}
+function returnWord(w) {
+  const p = learnProgress();
+  delete p[w];
+  localStorage.setItem("learnProgress", JSON.stringify(p));
+  beep(880, 0.12);
+  renderLearnedDialog();
+  renderBoard();
+  updateLearnedBtn();
+  if (!learnedWords().length) $("dlgLearned").close();
+}
+$("learnedBtn").addEventListener("click", () => {
+  renderLearnedDialog();
+  $("dlgLearned").showModal();
+});
+$("dlgLearnedClose").addEventListener("click", () => $("dlgLearned").close());
+
 /* ===================== ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ ===================== */
 function setMode(mode, speakFirst) {
   localStorage.setItem("appMode", mode);
@@ -1144,6 +1219,7 @@ function setMode(mode, speakFirst) {
   } else {
     show(SR ? "scrIdle" : "scrNoMic");
   }
+  updateLearnedBtn();
 }
 $("modeBtn").addEventListener("click", () => {
   const now = localStorage.getItem("appMode") === "learn" ? "ask" : "learn";

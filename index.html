@@ -31,6 +31,39 @@
     background: rgba(255,255,255,.15); border: none; color: #fff;
     width: 40px; height: 40px; border-radius: 12px; font-size: 20px; cursor: pointer;
   }
+  #modeBtn {
+    background: #ffd76a; border: none; color: #5a3fd6;
+    height: 40px; padding: 0 14px; border-radius: 12px;
+    font-size: 15px; font-weight: 800; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,.18);
+  }
+  .learnCard {
+    border: none; cursor: pointer;
+    background: rgba(255,255,255,.97);
+    border-radius: 28px;
+    padding: 26px 30px 20px;
+    width: min(92vw, 420px);
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    box-shadow: 0 12px 36px rgba(0,0,0,.25);
+    transition: transform .12s;
+    font-family: inherit;
+  }
+  .learnCard:active { transform: scale(.96); }
+  #lcEmoji { font-size: min(26vw, 100px); line-height: 1.1; }
+  #lcRu { font-size: min(8vw, 34px); font-weight: 900; letter-spacing: 1.5px; color: #333; }
+  #lcRu .syl-a { color: #e8a400; }
+  #lcRu .syl-b { color: #7c5cff; }
+  #lcRu .syl-sep { color: #bbb; font-weight: 400; }
+  #lcDe { font-size: min(8vw, 34px); font-weight: 800; color: #333; }
+  #lcDe .art-der { color: #2f7fd6; }
+  #lcDe .art-die { color: #e0507a; }
+  #lcDe .art-das { color: #2fae6e; }
+  .dots { display: flex; gap: 7px; margin-top: 4px; }
+  .dots span {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #e8e4f5; transition: background .2s, transform .2s;
+  }
+  .dots span.filled { background: #ffb300; transform: scale(1.15); }
   main {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
@@ -172,7 +205,10 @@
 
 <header>
   <h1>🇩🇪 Wie heißt das?</h1>
-  <button id="gearBtn" title="Настройки">⚙️</button>
+  <div style="display:flex;gap:8px">
+    <button id="modeBtn" title="Режим">📚 учить</button>
+    <button id="gearBtn" title="Настройки">⚙️</button>
+  </div>
 </header>
 
 <main>
@@ -220,6 +256,18 @@
     <button class="bigBtn attention" id="retryBtn">Скажи ещё раз 🎤</button>
   </div>
 
+  <!-- LEARN MODE -->
+  <div class="screen" id="scrLearn">
+    <button class="learnCard" id="learnCard">
+      <div id="lcEmoji">💡</div>
+      <div id="lcRu"></div>
+      <div id="lcDe"></div>
+      <div class="dots" id="lcDots"></div>
+    </button>
+    <div class="subhint" id="learnStats"></div>
+    <button class="bigBtn" id="lcNext">Дальше ➡️</button>
+  </div>
+
   <!-- NOT SUPPORTED -->
   <div class="screen" id="scrNoMic">
     <div style="font-size:80px">😢</div>
@@ -241,6 +289,9 @@
      Ключ хранится только на этом устройстве.</p>
   <div id="keyStatus"></div>
   <input id="keyInput" type="password" placeholder="Gemini API key (необязательно)" autocomplete="off">
+  <div class="dlgRow" style="justify-content:flex-start;margin-bottom:10px">
+    <button class="dlgCancel" id="dlgResetLearn">Сбросить прогресс 📚</button>
+  </div>
   <div class="dlgRow">
     <button class="dlgCancel" id="dlgCancel">Закрыть</button>
     <button class="dlgSave" id="dlgSave">Сохранить</button>
@@ -439,7 +490,7 @@ const FILLERS = new Set([
 
 /* ===================== УТИЛИТЫ ===================== */
 const $ = id => document.getElementById(id);
-const screens = ["scrIdle","scrListen","scrThink","scrResult","scrUnknown","scrNoMic"];
+const screens = ["scrIdle","scrListen","scrThink","scrResult","scrUnknown","scrNoMic","scrLearn"];
 function show(id) {
   screens.forEach(s => $(s).classList.toggle("active", s === id));
 }
@@ -848,23 +899,28 @@ function renderSyllables(el, text) {
   });
 }
 
+// немецкое слово с цветным артиклем (der — синий, die — красный, das — зелёный)
+function renderGerman(el, art, de) {
+  el.innerHTML = "";
+  if (art) {
+    const a = document.createElement("span");
+    a.className = "art-" + art;
+    a.textContent = art + " ";
+    el.appendChild(a);
+  }
+  const w = document.createElement("span");
+  w.className = "word";
+  w.textContent = de;
+  el.appendChild(w);
+}
+
 let lastSpeech = "";
 function showResult(hit) {
   const [art, de, emoji] = hit.e;
   $("resEmoji").textContent = emoji;
   renderSyllables($("resRu"), hit.ru);
   const deEl = $("resDe");
-  deEl.innerHTML = "";
-  if (art) {
-    const a = document.createElement("span");
-    a.className = "art-" + art;
-    a.textContent = art + " ";
-    deEl.appendChild(a);
-  }
-  const w = document.createElement("span");
-  w.className = "word";
-  w.textContent = de;
-  deEl.appendChild(w);
+  renderGerman(deEl, art, de);
   // длинные фразы — шрифтом поменьше, чтобы влезали
   deEl.style.fontSize = de.length > 18 ? "min(7vw, 32px)" : "";
 
@@ -884,6 +940,125 @@ function showUnknown(text, spoken, emoji) {
   // голосовая инструкция для ребёнка — что именно делать дальше
   setTimeout(() => speakRussian(spoken || text), 350);
 }
+
+/* ===================== РЕЖИМ «УЧИТЬ СЛОВА» ===================== */
+const LEARN_GOAL = 10; // столько раз ребёнок слушает слово, чтобы оно стало выученным
+
+// источник слов для обучения: пока встроенный словарь;
+// в будущем сюда можно добавлять другие наборы (например, выученные через AI)
+function learnPool() {
+  return Object.keys(DICT);
+}
+function learnProgress() {
+  try { return JSON.parse(localStorage.getItem("learnProgress") || "{}"); }
+  catch (e) { return {}; }
+}
+function bumpLearn(word) {
+  const p = learnProgress();
+  p[word] = (p[word] || 0) + 1;
+  localStorage.setItem("learnProgress", JSON.stringify(p));
+  return p[word];
+}
+function learnedCount() {
+  const p = learnProgress();
+  return learnPool().filter(w => (p[w] || 0) >= LEARN_GOAL).length;
+}
+function unlearnedWords() {
+  const p = learnProgress();
+  return learnPool().filter(w => (p[w] || 0) < LEARN_GOAL);
+}
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+let learnQueue = [];
+let currentLearnWord = null;
+let learnBusy = false; // защита от тыканья во время праздника
+
+function germanFor(word) {
+  const [art, de] = DICT[word];
+  return (art ? art + " " : "") + de;
+}
+
+function renderLearnCard() {
+  const w = currentLearnWord;
+  const [art, de, emoji] = DICT[w];
+  $("lcEmoji").textContent = emoji;
+  renderSyllables($("lcRu"), w);
+  renderGerman($("lcDe"), art, de);
+  const count = learnProgress()[w] || 0;
+  const dots = $("lcDots");
+  dots.innerHTML = "";
+  for (let i = 0; i < LEARN_GOAL; i++) {
+    const s = document.createElement("span");
+    if (i < count) s.className = "filled";
+    dots.appendChild(s);
+  }
+  $("learnStats").textContent = "⭐ Выучено: " + learnedCount() + " из " + learnPool().length;
+}
+
+function showAllLearned() {
+  $("lcEmoji").textContent = "🏆";
+  $("lcRu").textContent = "ТЫ ВЫУЧИЛ ВСЕ СЛОВА!";
+  $("lcDe").textContent = "Fantastisch!";
+  $("lcDots").innerHTML = "";
+  $("learnStats").textContent = "⭐ " + learnPool().length + " из " + learnPool().length;
+  speakRussian("Ура! Ты выучил все слова! Ты молодец!");
+}
+
+function nextLearnWord(speakIt) {
+  const remaining = unlearnedWords();
+  if (!remaining.length) { showAllLearned(); return; }
+  // тасуем очередь, чтобы слова шли в случайном порядке без повторов подряд
+  learnQueue = learnQueue.filter(w => remaining.includes(w) && w !== currentLearnWord);
+  if (!learnQueue.length) learnQueue = shuffle(remaining.filter(w => w !== currentLearnWord));
+  if (!learnQueue.length) learnQueue = [remaining[0]]; // осталось одно слово
+  currentLearnWord = learnQueue.pop();
+  renderLearnCard();
+  if (speakIt) setTimeout(() => speakGerman(germanFor(currentLearnWord)), 200);
+}
+
+$("learnCard").addEventListener("click", () => {
+  if (learnBusy || !currentLearnWord) return;
+  const count = bumpLearn(currentLearnWord);
+  renderLearnCard();
+  if (count >= LEARN_GOAL) {
+    // слово выучено — праздник и следующее слово
+    learnBusy = true;
+    $("lcEmoji").textContent = "🎉";
+    beep(1320, 0.12); setTimeout(() => beep(1760, 0.15), 150);
+    try { navigator.vibrate && navigator.vibrate([40, 60, 40, 60, 80]); } catch (e) {}
+    speakRussian("Ура! Слово выучено!");
+    setTimeout(() => { learnBusy = false; nextLearnWord(true); }, 2200);
+  } else {
+    speakGerman(germanFor(currentLearnWord));
+  }
+});
+$("lcNext").addEventListener("click", () => {
+  if (!learnBusy) nextLearnWord(true);
+});
+
+/* ===================== ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМОВ ===================== */
+function setMode(mode, speakFirst) {
+  localStorage.setItem("appMode", mode);
+  $("modeBtn").textContent = mode === "learn" ? "🎤 спросить" : "📚 учить";
+  if (mode === "learn") {
+    nextLearnWord(!!speakFirst);
+    show("scrLearn");
+  } else {
+    show(SR ? "scrIdle" : "scrNoMic");
+  }
+}
+$("modeBtn").addEventListener("click", () => {
+  const now = localStorage.getItem("appMode") === "learn" ? "ask" : "learn";
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  setMode(now, now === "learn");
+});
 
 /* ===================== КНОПКИ ===================== */
 $("micBtn").addEventListener("click", startListening);
@@ -914,11 +1089,12 @@ $("typeInput2").addEventListener("keydown", e => { if (e.key === "Enter") submit
 const dlg = $("dlgSettings");
 $("gearBtn").addEventListener("click", () => {
   $("keyInput").value = geminiKey();
-  const learnedCount = Object.keys(learned()).length;
+  const aiWords = Object.keys(learned()).length;
   $("keyStatus").textContent = (geminiKey()
     ? "✅ Ключ сохранён — AI-режим включён"
     : "ℹ️ Без ключа работает встроенный словарь (~300 слов)")
-    + (learnedCount ? " · выучено новых: " + learnedCount : "");
+    + (aiWords ? " · новых слов от AI: " + aiWords : "")
+    + " · 📚 выучено: " + learnedCount() + "/" + learnPool().length;
   $("keyStatus").style.color = geminiKey() ? "#2fae6e" : "#888";
   dlg.showModal();
 });
@@ -929,9 +1105,17 @@ $("dlgSave").addEventListener("click", () => {
   dlg.close();
 });
 $("dlgCancel").addEventListener("click", () => dlg.close());
+$("dlgResetLearn").addEventListener("click", () => {
+  if (confirm("Сбросить весь прогресс изучения слов?")) {
+    localStorage.removeItem("learnProgress");
+    learnQueue = [];
+    dlg.close();
+    if (localStorage.getItem("appMode") === "learn") nextLearnWord(false);
+  }
+});
 
-// на старте: если распознавание не поддерживается — сразу показать fallback
-if (!SR) show("scrNoMic");
+// на старте восстанавливаем режим (озвучку не включаем — нет жеста пользователя)
+setMode(localStorage.getItem("appMode") === "learn" ? "learn" : "ask", false);
 </script>
 </body>
 </html>

@@ -89,6 +89,23 @@
   }
   .tile:active { transform: scale(.88); }
   .tile .tEmoji { font-size: clamp(48px, 12vmin, 104px); line-height: 1.15; }
+  .tile.right {
+    box-shadow: 0 0 0 6px #3ddc84, 0 4px 12px rgba(0,0,0,.18);
+    animation: rightPop .5s;
+  }
+  @keyframes rightPop { 40% { transform: scale(1.12); } }
+  .tile.wrongT { animation: shake .45s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-9px); }
+    75% { transform: translateX(9px); }
+  }
+  #sayBtn {
+    background: #ffd76a; border: none; border-radius: 10px;
+    padding: 6px 12px; font-size: 17px; font-weight: 800;
+    color: #5a3fd6; cursor: pointer; margin-left: 8px;
+    font-family: inherit; flex: none;
+  }
   .tile.gone { animation: tileGone .55s forwards; pointer-events: none; }
   @keyframes tileGone {
     40% { transform: scale(1.25) rotate(8deg); }
@@ -1027,15 +1044,61 @@ const LEARN_EXCLUDE = new Set([
 function learnPool() {
   return Object.keys(DICT).filter(w => !w.includes(" ") && !LEARN_EXCLUDE.has(w));
 }
+const QUIZ_START = 7;   // после 7 прослушиваний слово переходит в фазу викторины
+const DAILY_CAP = 3;    // максимум зачётов на слово в день — интервальное повторение
+
 function learnProgress() {
   try { return JSON.parse(localStorage.getItem("learnProgress") || "{}"); }
   catch (e) { return {}; }
 }
-function bumpLearn(word) {
+function saveProgress(p) { localStorage.setItem("learnProgress", JSON.stringify(p)); }
+
+// дневной журнал: сколько зачётов слово получило сегодня (сбрасывается по дате)
+function dailyData() {
+  const today = new Date().toISOString().slice(0, 10);
+  let d;
+  try { d = JSON.parse(localStorage.getItem("learnDaily") || "{}"); }
+  catch (e) { d = {}; }
+  if (d.date !== today) d = { date: today, credits: {}, spoken: {} };
+  return d;
+}
+function saveDaily(d) { localStorage.setItem("learnDaily", JSON.stringify(d)); }
+
+// один зачёт (прослушивание или правильный ответ), не больше DAILY_CAP в день
+function addCredit(word) {
+  const d = dailyData();
+  if ((d.credits[word] || 0) >= DAILY_CAP) return false;
+  d.credits[word] = (d.credits[word] || 0) + 1;
+  saveDaily(d);
   const p = learnProgress();
   p[word] = (p[word] || 0) + 1;
-  localStorage.setItem("learnProgress", JSON.stringify(p));
-  return p[word];
+  saveProgress(p);
+  return true;
+}
+
+// когда слово было выучено — для еженедельного повторения
+function learnedMeta() {
+  try { return JSON.parse(localStorage.getItem("learnedMeta") || "{}"); }
+  catch (e) { return {}; }
+}
+
+// раз в день возвращаем до 3 самых давних выученных слов на повторение:
+// им ставится 12 из 15 — три правильных ответа викторины, и слово снова зачтено
+function maybeReviewOld() {
+  const d = dailyData();
+  if (d.reviewed) return;
+  const p = learnProgress();
+  const meta = learnedMeta();
+  const week = 7 * 24 * 3600 * 1000;
+  const due = learnPool()
+    .filter(w => (p[w] || 0) >= LEARN_GOAL)
+    .filter(w => !meta[w] || Date.now() - meta[w] > week)
+    .sort((a, b) => (meta[a] || 0) - (meta[b] || 0))
+    .slice(0, 3);
+  for (const w of due) p[w] = LEARN_GOAL - 3;
+  if (due.length) saveProgress(p);
+  d.reviewed = true;
+  saveDaily(d);
 }
 function learnedCount() {
   const p = learnProgress();
@@ -1105,16 +1168,105 @@ function showLastWord(word) {
   const span = document.createElement("span");
   renderGerman(span, art, de);
   el.appendChild(span);
+  // «повтори за мной»: ребёнок говорит слово сам
+  if (SR) {
+    const mic = document.createElement("button");
+    mic.id = "sayBtn";
+    mic.textContent = "🎙 Скажи!";
+    mic.addEventListener("click", (e) => { e.stopPropagation(); startRepeat(word); });
+    el.appendChild(mic);
+  }
 }
 
+/* ---- фаза 1 (зачёты 1–7): слушание по нажатию ----
+   ---- фаза 2 (зачёты 8–15): только правильные ответы викторины ---- */
+let quizWord = null, quizPending = false, freeTaps = 0;
+let lastTap = { word: null, t: 0 };
+
 function tapTile(tile, word) {
-  const count = bumpLearn(word);
+  if (repeatActive) return;
+  if (quizWord) { answerQuiz(tile, word); return; }
+
   showLastWord(word);
   speakGerman(germanFor(word));
-  if (count < LEARN_GOAL) return;
 
-  // 10 нажатий: слово выучено — исчезает, на его место приходит
-  // следующее по порядку слово из запаса
+  // быстрые повторные тыки по той же плитке не засчитываются
+  const now = performance.now();
+  const cooldownOk = !(lastTap.word === word && now - lastTap.t < 2500);
+  lastTap = { word: word, t: now };
+  if (cooldownOk && (learnProgress()[word] || 0) < QUIZ_START) addCredit(word);
+
+  // каждые 4 свободных нажатия — вопрос по слову из фазы викторины
+  freeTaps++;
+  if (!quizPending && freeTaps >= 4) {
+    const p = learnProgress();
+    const candidates = [...document.querySelectorAll("#wordGrid .tile")]
+      .map(t => t.dataset.word)
+      .filter(w => (p[w] || 0) >= QUIZ_START);
+    if (candidates.length) {
+      freeTaps = 0;
+      quizPending = true;
+      const target = candidates[Math.floor(Math.random() * candidates.length)];
+      setTimeout(() => {
+        quizPending = false;
+        if (localStorage.getItem("appMode") !== "learn") return;
+        if (!document.querySelector('[data-word="' + CSS.escape(target) + '"]')) return;
+        quizWord = target;
+        showQuizPrompt();
+        speakGerman("Wo ist " + germanFor(target) + "?");
+      }, 1600);
+    }
+  }
+}
+
+function showQuizPrompt() {
+  const el = $("lastWord");
+  el.classList.remove("empty");
+  el.innerHTML = "";
+  el.appendChild(document.createTextNode("❓ Слушай и найди!"));
+  const b = document.createElement("button");
+  b.id = "sayBtn";
+  b.textContent = "🔊";
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (quizWord) speakGerman("Wo ist " + germanFor(quizWord) + "?");
+  });
+  el.appendChild(b);
+}
+
+function answerQuiz(tile, word) {
+  const target = quizWord;
+  quizWord = null;
+  if (word === target) {
+    tile.classList.add("right");
+    setTimeout(() => tile.classList.remove("right"), 800);
+    beep(1320, 0.12);
+    try { navigator.vibrate && navigator.vibrate([40, 60, 40]); } catch (e) {}
+    addCredit(word);
+    showLastWord(word);
+    speakGerman(germanFor(word));
+    if ((learnProgress()[word] || 0) >= LEARN_GOAL) completeWord(tile, word);
+  } else {
+    // мягко: показать правильный ответ, без штрафа
+    tile.classList.add("wrongT");
+    setTimeout(() => tile.classList.remove("wrongT"), 600);
+    beep(300, 0.2);
+    const correct = document.querySelector('[data-word="' + CSS.escape(target) + '"]');
+    if (correct) {
+      correct.classList.add("right");
+      setTimeout(() => correct.classList.remove("right"), 1400);
+    }
+    showLastWord(target);
+    speakGerman(germanFor(target));
+  }
+}
+
+// слово выучено — исчезает, на его место приходит следующее по порядку
+function completeWord(tile, word) {
+  const meta = learnedMeta();
+  meta[word] = Date.now();
+  localStorage.setItem("learnedMeta", JSON.stringify(meta));
+
   beep(1320, 0.12); setTimeout(() => beep(1760, 0.15), 150);
   try { navigator.vibrate && navigator.vibrate([40, 60, 40, 60, 80]); } catch (e) {}
   tile.querySelector(".tEmoji").textContent = "🎉";
@@ -1132,6 +1284,68 @@ function tapTile(tile, word) {
   }, 600);
 }
 
+/* ---- «повтори за мной»: распознавание немецкой речи ребёнка ---- */
+let repeatActive = false;
+function startRepeat(word) {
+  if (!SR || repeatActive || quizWord) return;
+  repeatActive = true;
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  const el = $("lastWord");
+  el.classList.remove("empty");
+  el.textContent = "🎙 Скажи: " + germanFor(word);
+  beep(880, 0.15);
+
+  const rec = new SR();
+  rec.lang = "de-DE";
+  rec.interimResults = false;
+  rec.maxAlternatives = 5;
+  rec.continuous = false;
+  let gotResult = false;
+  const stopper = setTimeout(() => { try { rec.stop(); } catch (e) {} }, 5000);
+
+  rec.onresult = (ev) => {
+    gotResult = true;
+    const said = [...ev.results[0]].map(a => a.transcript.toLowerCase()).join(" ");
+    const target = DICT[word][1].toLowerCase();
+    // щедрая оценка: цель — уверенность ребёнка, а не точность
+    const stem = target.slice(0, Math.min(target.length, 4));
+    const ok = said.includes(target) ||
+               said.split(/\s+/).some(t => t.startsWith(stem));
+    if (ok) {
+      beep(1320, 0.12); setTimeout(() => beep(1760, 0.15), 150);
+      el.textContent = "🎉 Super!";
+      speakRussian("Супер! Отлично говоришь!");
+      // бонусный зачёт за речь — один раз на слово в день, без общего лимита
+      const d = dailyData();
+      if (!d.spoken[word]) {
+        d.spoken[word] = 1;
+        saveDaily(d);
+        const p = learnProgress();
+        p[word] = (p[word] || 0) + 1;
+        saveProgress(p);
+        if (p[word] >= LEARN_GOAL) {
+          const tile = document.querySelector('[data-word="' + CSS.escape(word) + '"]');
+          if (tile) completeWord(tile, word);
+        }
+      }
+    } else {
+      el.textContent = "💪 Почти! Послушай ещё раз";
+      speakGerman(germanFor(word));
+    }
+  };
+  rec.onerror = () => {};
+  rec.onend = () => {
+    clearTimeout(stopper);
+    repeatActive = false;
+    if (!gotResult) {
+      el.textContent = "🙉 Я не услышал. Попробуй ещё!";
+      setTimeout(() => { if (!repeatActive && !quizWord) showLastWord(word); }, 1500);
+    }
+  };
+  try { rec.start(); }
+  catch (e) { repeatActive = false; showLastWord(word); }
+}
+
 function showAllLearned() {
   $("wordGrid").innerHTML =
     '<div style="grid-column:1/-1;text-align:center;padding:40px 10px;' +
@@ -1142,6 +1356,8 @@ function showAllLearned() {
 }
 
 function renderBoard() {
+  quizWord = null; // пересборка доски отменяет незаконченный вопрос
+  freeTaps = 0;
   const board = fillBoard();
   if (!board.length) { showAllLearned(); return; }
   $("lastWord").className = "empty";
@@ -1214,6 +1430,7 @@ function setMode(mode, speakFirst) {
   localStorage.setItem("appMode", mode);
   $("modeBtn").textContent = mode === "learn" ? "🎤 спросить" : "📚 учить";
   if (mode === "learn") {
+    maybeReviewOld(); // раз в день: старые выученные слова — на повторение
     renderBoard();
     show("scrLearn");
   } else {
@@ -1276,6 +1493,8 @@ $("dlgResetLearn").addEventListener("click", () => {
   if (confirm("Сбросить весь прогресс изучения слов?")) {
     localStorage.removeItem("learnProgress");
     localStorage.removeItem("learnBoard");
+    localStorage.removeItem("learnDaily");
+    localStorage.removeItem("learnedMeta");
     dlg.close();
     if (localStorage.getItem("appMode") === "learn") renderBoard();
   }
